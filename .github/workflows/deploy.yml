@@ -1,0 +1,77 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation (keyless auth)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Run tests (fast gate before deploy)
+        run: go build ./...
+
+      - name: Authenticate to Google Cloud (keyless)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run migrations
+        run: |
+          go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          migrate -path migrations -database "${{ secrets.DATABASE_URL }}" up
+
+      - name: Build and push container
+        run: |
+          gcloud builds submit \
+            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/kidsaber-api \
+            --project ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: kidsaber-api
+          region: europe-west1
+          image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/kidsaber-api
+          flags: "--allow-unauthenticated"
+          env_vars: |
+            PORT=8080
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            LLM_PROVIDER=${{ secrets.LLM_PROVIDER }}
+            LLM_API_KEY=${{ secrets.LLM_API_KEY }}
+            LLM_MODEL=${{ secrets.LLM_MODEL }}
+            LLM_BASE_URL=${{ secrets.LLM_BASE_URL }}
+            NOTIFY_WEBHOOK_URL=${{ secrets.NOTIFY_WEBHOOK_URL }}
+            API_KEY=${{ secrets.API_KEY }}
+            AUTH_ENABLED=true
+            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+
+# ── Required GitHub Actions Secrets ─────────────────────────────────────────
+# GCP_PROJECT_ID               — Google Cloud project ID
+# GCP_WORKLOAD_IDENTITY_PROVIDER — keyless auth provider
+# GCP_SERVICE_ACCOUNT          — service account email for Cloud Run deploy
+# DATABASE_URL                 — Neon PostgreSQL (postgres://...?sslmode=require)
+# LLM_PROVIDER                 — gemini | groq | ollama
+# LLM_API_KEY                  — LLM provider API key
+# LLM_MODEL                    — e.g. gemini-2.0-flash-lite
+# LLM_BASE_URL                 — e.g. https://generativelanguage.googleapis.com/v1beta/openai/
+# NOTIFY_WEBHOOK_URL           — Slack/Discord webhook URL
+# API_KEY                      — strong random key sent by the mobile app
+# CORS_ALLOWED_ORIGINS         — comma-separated list of allowed origins

@@ -1,0 +1,78 @@
+.PHONY: build test lint run-dev docker-build seed migrate migrate-down migrate-version help
+
+MIGRATE_VERSION := v4.18.2
+MIGRATE         := go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION)
+
+# Load .env if it exists
+-include .env
+export
+
+BINARY     := server
+SEED_BIN   := seed
+GO_FLAGS   := -race
+COVER_OUT  := coverage.out
+
+## build: Compile the server binary
+build:
+	go build -ldflags="-s -w" -o $(BINARY) ./cmd/server
+	go build -ldflags="-s -w" -o $(SEED_BIN) ./cmd/seed
+
+## test: Run all tests with race detector and coverage
+test:
+	go test $(GO_FLAGS) -coverprofile=$(COVER_OUT) ./...
+	go tool cover -func=$(COVER_OUT) | tail -1
+
+## lint: Run static analysis (go vet + govulncheck if available)
+lint:
+	go vet ./...
+	@command -v govulncheck >/dev/null 2>&1 && govulncheck ./... || echo "govulncheck not installed — skipping"
+	@command -v staticcheck >/dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed — skipping"
+
+## run-dev: Start the API locally (requires .env with DATABASE_URL)
+run-dev:
+	@[ -f .env ] || (echo "No .env found. Copy .env.example to .env and fill in values." && exit 1)
+	go run ./cmd/server
+
+## docker-build: Build the production Docker image
+docker-build:
+	docker build -t kidsaber-api:latest .
+
+## docker-up: Start the full stack locally via docker-compose
+docker-up:
+	docker compose up --build
+
+## docker-down: Stop and remove containers
+docker-down:
+	docker compose down
+
+## migrate: Apply pending SQL migrations (golang-migrate)
+migrate:
+	@[ -n "$(DATABASE_URL)" ] || (echo "DATABASE_URL is not set" && exit 1)
+	$(MIGRATE) -path migrations -database "$(DATABASE_URL)" up
+
+## migrate-down: Roll back the last migration
+migrate-down:
+	@[ -n "$(DATABASE_URL)" ] || (echo "DATABASE_URL is not set" && exit 1)
+	$(MIGRATE) -path migrations -database "$(DATABASE_URL)" down 1
+
+## migrate-version: Show current migration version
+migrate-version:
+	@[ -n "$(DATABASE_URL)" ] || (echo "DATABASE_URL is not set" && exit 1)
+	$(MIGRATE) -path migrations -database "$(DATABASE_URL)" version
+
+## seed: Pre-populate the question bank (runs the generator job JOB_SEED_ITERATIONS times)
+seed:
+	go run ./cmd/seed
+
+## tidy: Tidy and verify Go modules
+tidy:
+	go mod tidy
+	go mod verify
+
+## clean: Remove build artifacts
+clean:
+	rm -f $(BINARY) $(SEED_BIN) $(COVER_OUT)
+
+## help: Show this help
+help:
+	@grep -E '^##' Makefile | sed 's/## /  /'
