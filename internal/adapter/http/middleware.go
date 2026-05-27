@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/subtle"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -99,10 +101,17 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// AuthMiddleware validates the API key when auth is enabled.
-// Uses constant-time comparison to prevent timing attacks.
-// Returns 401 with a generic message — never reveals key format details.
-func AuthMiddleware(enabled bool, apiKey string) func(http.Handler) http.Handler {
+// AuthMiddleware validates the bearer credential on protected routes.
+//
+// Accepted credentials (when enabled=true):
+//  1. Static API key — constant-time compared against apiKey; suitable for
+//     server-to-server calls and admin tooling.
+//  2. Device token — validated by validator.ValidateToken; issued by
+//     POST /auth/token for mobile clients. Pass nil to disable token auth.
+//
+// Uses constant-time comparison for the static key to prevent timing attacks.
+// Returns 401 with a generic message — never reveals which check failed.
+func AuthMiddleware(enabled bool, apiKey string, validator TokenValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !enabled {
@@ -111,12 +120,24 @@ func AuthMiddleware(enabled bool, apiKey string) func(http.Handler) http.Handler
 			}
 
 			key := extractAPIKey(r)
-			if key == "" || subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) != 1 {
+			if key == "" {
 				writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid or missing API key")
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			// 1. Accept static API key (constant-time comparison).
+			if apiKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) == 1 {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// 2. Accept a valid device token issued by POST /auth/token.
+			if validator != nil && validator.ValidateToken(key) == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid or missing API key")
 		})
 	}
 }
@@ -129,6 +150,103 @@ func extractAPIKey(r *http.Request) string {
 		}
 	}
 	return r.Header.Get("X-API-Key")
+}
+
+// ── Rate Limiter ──────────────────────────────────────────────────────────────
+
+// clientState tracks the request count within the current window for one IP.
+type clientState struct {
+	count   int
+	resetAt time.Time
+}
+
+// ipRateLimiter implements a fixed-window in-process rate limiter keyed by client IP.
+// It is safe for concurrent use.
+type ipRateLimiter struct {
+	mu      sync.Mutex
+	clients map[string]*clientState
+	maxReq  int
+	window  time.Duration
+}
+
+// NewIPRateLimiter creates a rate limiter that allows maxReq requests per window per IP.
+// A background goroutine evicts expired entries every window interval.
+func NewIPRateLimiter(maxReq int, window time.Duration) *ipRateLimiter {
+	rl := &ipRateLimiter{
+		clients: make(map[string]*clientState),
+		maxReq:  maxReq,
+		window:  window,
+	}
+	go rl.cleanupLoop()
+	return rl
+}
+
+func (rl *ipRateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(rl.window)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		now := time.Now()
+		for ip, s := range rl.clients {
+			if now.After(s.resetAt) {
+				delete(rl.clients, ip)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// Allow returns true if the IP is within its rate limit for the current window.
+func (rl *ipRateLimiter) Allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	s, ok := rl.clients[ip]
+	if !ok || now.After(s.resetAt) {
+		rl.clients[ip] = &clientState{count: 1, resetAt: now.Add(rl.window)}
+		return true
+	}
+	if s.count >= rl.maxReq {
+		return false
+	}
+	s.count++
+	return true
+}
+
+// RateLimitMiddleware rejects requests from IPs that exceed the limiter's threshold.
+// Returns 429 Too Many Requests when the limit is hit.
+func RateLimitMiddleware(limiter *ipRateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !limiter.Allow(clientIP(r)) {
+				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+					"Too many requests. Please slow down and try again.")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// clientIP extracts the real client IP, respecting X-Forwarded-For from Cloud Run.
+// Falls back to the direct remote address.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For may contain a comma-separated list; take the first entry.
+		if idx := strings.Index(xff, ","); idx != -1 {
+			xff = xff[:idx]
+		}
+		ip := strings.TrimSpace(xff)
+		if ip != "" {
+			return ip
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // parseOrigins splits a comma-separated list of origins into a lookup map.

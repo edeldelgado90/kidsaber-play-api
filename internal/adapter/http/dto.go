@@ -17,3 +17,16 @@ type ErrorResponse struct {
 type JobRunsResponse struct {
 	Runs []domain.JobRun `json:"runs"`
 }
+
+// TokenRequest is the JSON body for POST /auth/token.
+type TokenRequest struct {
+	DeviceID string `json:"deviceId"`
+}
+
+// TokenResponse is the JSON response body for POST /auth/token.
+// Token is a short-lived bearer credential for use in Authorization headers.
+// ExpiresAt is a Unix timestamp (seconds) indicating when the token expires.
+type TokenResponse struct {
+	Token     string `json:"token"`
+	ExpiresAt int64  `json:"expiresAt"`
+}

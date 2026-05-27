@@ -50,7 +50,7 @@ jobs:
           service: kidsaber-api
           region: europe-west1
           image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/kidsaber-api
-          flags: "--allow-unauthenticated"
+          flags: "--allow-unauthenticated --http-startup-probe-path=/health"
           env_vars: |
             PORT=8080
             DATABASE_URL=${{ secrets.DATABASE_URL }}
