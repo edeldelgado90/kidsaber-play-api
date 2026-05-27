@@ -1,6 +1,6 @@
 module github.com/kidsaber/kidsaber-play-api
 
-go 1.25
+go 1.26.3
 
 require (
 	github.com/caarlos0/env/v11 v11.3.1
