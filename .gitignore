@@ -1,6 +1,6 @@
-# Binaries
-server
-seed
+# Binaries (root-level compiled outputs only)
+/server
+/seed
 *.exe
 *.out
 
