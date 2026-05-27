@@ -10,6 +10,8 @@ jobs:
   ci:
     name: Build, Test & Lint
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
     services:
       postgres:
@@ -37,12 +39,15 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run migrations
+      - name: Install migrate
         run: |
           go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.2
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          migrate -path migrations \
-            -database "postgres://postgres:test@localhost:5432/kidsaber_test?sslmode=disable" up
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgres://postgres:test@localhost:5432/kidsaber_test?sslmode=disable
+        run: migrate -path migrations -database "$DATABASE_URL" up
 
       - name: go vet
         run: go vet ./...
