@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"time"
 
 	"github.com/kidsaber/kidsaber-play-api/internal/domain"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
@@ -89,10 +89,9 @@ func (g *LLMGenerator) Generate(ctx context.Context, params questions.GeneratePa
 				"grade", params.Grade, "type", params.Type)
 		}
 
-		responseText, llmErr := g.client.Complete(ctx, currentPrompt)
+		responseText, llmErr := g.completeWithRateLimitBackoff(ctx, currentPrompt)
 		if llmErr != nil {
-			// Distinguish rate limit errors from other failures
-			if strings.Contains(llmErr.Error(), "429") {
+			if errors.Is(llmErr, domain.ErrRateLimit) {
 				return nil, domain.ErrRateLimit
 			}
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -131,4 +130,40 @@ func (g *LLMGenerator) Generate(ctx context.Context, params questions.GeneratePa
 		"subject", params.Subject, "grade", params.Grade, "type", params.Type,
 		"last_error", lastValidationErrors)
 	return nil, domain.ErrNoValidQuestions
+}
+
+// completeWithRateLimitBackoff calls the LLM client and retries with exponential backoff
+// when the provider returns a 429. Non-rate-limit errors are returned immediately.
+// Backoff schedule: 30 s → 60 s → 120 s (3 retries, then gives up).
+func (g *LLMGenerator) completeWithRateLimitBackoff(ctx context.Context, prompt string) (string, error) {
+	const maxRLRetries = 3
+	const baseDelay = 30 * time.Second
+
+	text, err := g.client.Complete(ctx, prompt)
+	if err == nil {
+		return text, nil
+	}
+
+	for i := 0; i < maxRLRetries; i++ {
+		if !errors.Is(err, domain.ErrRateLimit) {
+			return "", err // not a rate-limit error — surface it immediately
+		}
+
+		delay := baseDelay * (1 << i) // 30 s, 60 s, 120 s
+		g.logger.Warn("LLM rate limited, backing off",
+			"delay_s", delay.Seconds(), "rl_attempt", i+1, "max_rl_retries", maxRLRetries)
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(delay):
+		}
+
+		text, err = g.client.Complete(ctx, prompt)
+		if err == nil {
+			return text, nil
+		}
+	}
+
+	return "", domain.ErrRateLimit
 }

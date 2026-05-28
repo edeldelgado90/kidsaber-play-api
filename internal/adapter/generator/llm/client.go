@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/kidsaber/kidsaber-play-api/internal/domain"
 )
 
 // openAIRequest is the request body for the OpenAI-compatible chat completions API.
@@ -98,7 +100,7 @@ func (c *LLMClient) Complete(ctx context.Context, prompt string) (string, error)
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return "", fmt.Errorf("LLM rate limit exceeded (429)")
+		return "", fmt.Errorf("%w", domain.ErrRateLimit)
 	}
 	if resp.StatusCode >= 500 {
 		return "", fmt.Errorf("LLM provider error (%d)", resp.StatusCode)

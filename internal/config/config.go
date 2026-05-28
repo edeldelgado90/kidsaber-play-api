@@ -68,9 +68,12 @@ type AuthConfig struct {
 // JobConfig holds question generator job settings.
 // The schedule is now managed externally by Cloud Scheduler — not configured here.
 type JobConfig struct {
-	BatchSize         int `env:"JOB_BATCH_SIZE"          envDefault:"10"`
-	MaxPerCombination int `env:"JOB_MAX_PER_COMBINATION" envDefault:"100"`
-	SeedIterations    int `env:"JOB_SEED_ITERATIONS"     envDefault:"10"`
+	BatchSize            int `env:"JOB_BATCH_SIZE"              envDefault:"10"`
+	MaxPerCombination    int `env:"JOB_MAX_PER_COMBINATION"     envDefault:"100"`
+	SeedIterations       int `env:"JOB_SEED_ITERATIONS"         envDefault:"10"`
+	CombinationDelayS    int `env:"JOB_COMBINATION_DELAY_S"     envDefault:"4"`
+
+	CombinationDelay time.Duration // derived: CombinationDelayS * time.Second
 }
 
 // NotifyConfig holds notification settings for webhook and SMTP.
@@ -101,6 +104,7 @@ func Load() (*Config, error) {
 	cfg.Server.Timeout = time.Duration(cfg.Server.TimeoutS) * time.Second
 	cfg.LLM.Timeout = time.Duration(cfg.LLM.TimeoutS) * time.Second
 	cfg.Auth.TokenTTL = time.Duration(cfg.Auth.TokenTTLS) * time.Second
+	cfg.Job.CombinationDelay = time.Duration(cfg.Job.CombinationDelayS) * time.Second
 
 	// Validate: auth enabled requires an API key
 	if cfg.Auth.Enabled && cfg.Auth.APIKey == "" {

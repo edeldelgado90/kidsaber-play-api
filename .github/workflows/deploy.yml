@@ -152,5 +152,10 @@ jobs:
 #   --member="serviceAccount:$GCP_SERVICE_ACCOUNT" \
 #   --role="roles/run.invoker"
 #
-# 3. Enable Cloud Scheduler API (if not already enabled)
+# 3. Allow the service account to manage Cloud Scheduler jobs
+# gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+#   --member="serviceAccount:$GCP_SERVICE_ACCOUNT" \
+#   --role="roles/cloudscheduler.admin"
+#
+# 4. Enable Cloud Scheduler API (if not already enabled)
 # gcloud services enable cloudscheduler.googleapis.com --project=$GCP_PROJECT_ID

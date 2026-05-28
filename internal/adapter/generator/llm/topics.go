@@ -88,7 +88,10 @@ var curriculum = map[topicKey][]string{
 		"decimal_operations_all", "basic_percentages", "rule_of_three",
 		"area_perimeter_polygons", "volume_basic_solids", "mean_and_mode",
 	},
-	{domain.SubjectMathematics, 5, domain.GameTypeMatching}: {},
+	{domain.SubjectMathematics, 5, domain.GameTypeMatching}: {
+		"basic_percentages", "fractions_multiply_divide",
+		"area_perimeter_polygons", "mean_and_mode",
+	},
 
 	{domain.SubjectMathematics, 6, domain.GameTypeOptionMultiple}: {
 		"integer_numbers_negative", "combined_operations_fractions", "applied_percentages",

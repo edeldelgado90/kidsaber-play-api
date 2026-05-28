@@ -29,17 +29,16 @@ func TestTopicPicker_ReturnsTopicForAllCombinations(t *testing.T) {
 		for grade := 1; grade <= 6; grade++ {
 			for _, gt := range gameTypes {
 				topics := picker.Topics(s, grade, gt)
-				// Some matching combinations have zero topics (e.g. mathematics/5/matching)
-				// We only require Pick to succeed when topics are available.
-				if len(topics) > 0 {
-					topic, err := picker.Pick(s, grade, gt)
-					require.NoError(t, err,
-						"Pick should succeed for %s grade %d %s", s, grade, gt)
-					assert.NotEmpty(t, topic,
-						"topic should not be empty for %s grade %d %s", s, grade, gt)
-					assert.Contains(t, topics, topic,
-						"returned topic should be in the topics list")
-				}
+				require.NotEmpty(t, topics,
+					"every combination must have at least one topic: %s grade %d %s", s, grade, gt)
+
+				topic, err := picker.Pick(s, grade, gt)
+				require.NoError(t, err,
+					"Pick should succeed for %s grade %d %s", s, grade, gt)
+				assert.NotEmpty(t, topic,
+					"topic should not be empty for %s grade %d %s", s, grade, gt)
+				assert.Contains(t, topics, topic,
+					"returned topic should be in the topics list")
 			}
 		}
 	}
@@ -48,8 +47,8 @@ func TestTopicPicker_ReturnsTopicForAllCombinations(t *testing.T) {
 func TestTopicPicker_ErrorWhenNoTopicsAvailable(t *testing.T) {
 	picker := llm.NewTopicPicker()
 
-	// mathematics grade 5 matching has no topics in the curriculum
-	_, err := picker.Pick(domain.SubjectMathematics, 5, domain.GameTypeMatching)
+	// An unknown subject/grade/gameType combination must return an error.
+	_, err := picker.Pick("unknown_subject", 99, domain.GameTypeMatching)
 	assert.Error(t, err)
 }
 

@@ -79,6 +79,7 @@ func run() error {
 		job.Config{
 			BatchSize:         cfg.Job.BatchSize,
 			MaxPerCombination: cfg.Job.MaxPerCombination,
+			CombinationDelay:  cfg.Job.CombinationDelay,
 		},
 		log,
 	)
