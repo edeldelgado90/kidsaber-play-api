@@ -63,7 +63,7 @@ jobs:
           service: kidsaber-api
           region: europe-west1
           image: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api
-          flags: "--allow-unauthenticated --http-startup-probe-path=/health"
+          flags: "--allow-unauthenticated"
           env_vars: |
             PORT=8080
             DATABASE_URL=${{ secrets.DATABASE_URL }}
