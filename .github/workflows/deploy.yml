@@ -44,10 +44,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: migrate -path migrations -database "$DATABASE_URL" up
 
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
       - name: Build and push container
         run: |
           gcloud builds submit \
-            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/kidsaber-api \
+            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api \
             --project ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Deploy to Cloud Run
@@ -55,7 +58,7 @@ jobs:
         with:
           service: kidsaber-api
           region: europe-west1
-          image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/kidsaber-api
+          image: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api
           flags: "--allow-unauthenticated --http-startup-probe-path=/health"
           env_vars: |
             PORT=8080
@@ -73,6 +76,16 @@ jobs:
 # GCP_PROJECT_ID               — Google Cloud project ID
 # GCP_WORKLOAD_IDENTITY_PROVIDER — keyless auth provider
 # GCP_SERVICE_ACCOUNT          — service account email for Cloud Run deploy
+#
+# ── One-time GCP setup (run once before first deploy) ────────────────────────
+# gcloud artifacts repositories create kidsaber \
+#   --repository-format=docker \
+#   --location=europe-west1 \
+#   --project=$GCP_PROJECT_ID
+#
+# gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+#   --member="serviceAccount:$GCP_SERVICE_ACCOUNT" \
+#   --role="roles/artifactregistry.writer"
 # DATABASE_URL                 — Neon PostgreSQL (postgres://...?sslmode=require)
 # LLM_PROVIDER                 — gemini | groq | ollama
 # LLM_API_KEY                  — LLM provider API key
