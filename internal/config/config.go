@@ -65,13 +65,12 @@ type AuthConfig struct {
 	TokenTTL time.Duration
 }
 
-// JobConfig holds background job settings.
+// JobConfig holds question generator job settings.
+// The schedule is now managed externally by Cloud Scheduler — not configured here.
 type JobConfig struct {
-	Enabled           bool   `env:"JOB_ENABLED"             envDefault:"true"`
-	Schedule          string `env:"JOB_SCHEDULE"            envDefault:"0 3 * * *"`
-	BatchSize         int    `env:"JOB_BATCH_SIZE"          envDefault:"10"`
-	MaxPerCombination int    `env:"JOB_MAX_PER_COMBINATION" envDefault:"100"`
-	SeedIterations    int    `env:"JOB_SEED_ITERATIONS"     envDefault:"10"`
+	BatchSize         int `env:"JOB_BATCH_SIZE"          envDefault:"10"`
+	MaxPerCombination int `env:"JOB_MAX_PER_COMBINATION" envDefault:"100"`
+	SeedIterations    int `env:"JOB_SEED_ITERATIONS"     envDefault:"10"`
 }
 
 // NotifyConfig holds notification settings for webhook and SMTP.

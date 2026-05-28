@@ -1,6 +1,7 @@
-// cmd/seed pre-populates the question bank by running the generator job N times.
-// Usage: make seed   (calls this binary with JOB_SEED_ITERATIONS iterations)
-// This is not the production cron runner — it exits after completing all iterations.
+// cmd/job is the production Cloud Run Job entrypoint.
+// It runs one full pass of the question generator over all 72 combinations and exits.
+// Triggered externally by Cloud Scheduler — no HTTP server, no cron scheduler inside.
+// Exit 0 → all combinations succeeded. Exit 1 → one or more combinations failed.
 package main
 
 import (
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/kidsaber/kidsaber-play-api/internal/adapter/generator/llm"
 	"github.com/kidsaber/kidsaber-play-api/internal/adapter/notify"
@@ -20,7 +22,7 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "seed error:", err)
+		fmt.Fprintln(os.Stderr, "job error:", err)
 		os.Exit(1)
 	}
 }
@@ -34,14 +36,17 @@ func run() error {
 	appEnv := os.Getenv("APP_ENV")
 	log := logger.New(appEnv)
 	slog.SetDefault(log)
+	log.Info("starting question generator job")
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
+	defer cancel()
 
 	repo, err := postgres.New(ctx, cfg.DB.URL)
 	if err != nil {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer repo.Close()
+	log.Info("connected to database")
 
 	qValidator, err := validator.NewQuestionValidator()
 	if err != nil {
@@ -57,44 +62,32 @@ func run() error {
 	topicPicker := llm.NewTopicPicker()
 	llmGen := llm.NewLLMGenerator(llmClient, qValidator, topicPicker, cfg.LLM.MaxRetries, log)
 
-	noopNotifier := notify.NewNoopNotifier()
+	webhookNotifier := notify.NewWebhookNotifier(cfg.Notify.WebhookURL)
+	smtpNotifier := notify.NewSMTPNotifier(
+		cfg.Notify.SMTPHost, cfg.Notify.SMTPPort,
+		cfg.Notify.SMTPUser, cfg.Notify.SMTPPass,
+		cfg.Notify.SMTPFrom, cfg.Notify.SMTPTo,
+	)
+	notifier := notify.NewMultiNotifier(log, webhookNotifier, smtpNotifier)
 
 	generatorJob := job.NewQuestionGeneratorJob(
 		llmGen,
 		repo,
 		repo,
-		noopNotifier,
+		notifier,
 		topicPicker,
 		job.Config{
 			BatchSize:         cfg.Job.BatchSize,
 			MaxPerCombination: cfg.Job.MaxPerCombination,
-			SeedIterations:    cfg.Job.SeedIterations,
 		},
 		log,
 	)
 
-	iterations := cfg.Job.SeedIterations
-	if iterations <= 0 {
-		iterations = 10
+	if err := generatorJob.Run(ctx); err != nil {
+		log.Error("question generator job failed", "error", err)
+		return err
 	}
 
-	log.Info("starting database seed",
-		"iterations", iterations,
-		"batch_size", cfg.Job.BatchSize,
-		"combinations", 72,
-	)
-
-	for i := 1; i <= iterations; i++ {
-		log.Info("seed iteration", "iteration", i, "of", iterations)
-		if err := generatorJob.Run(ctx); err != nil {
-			log.Warn("iteration completed with failures", "iteration", i, "error", err)
-		}
-	}
-
-	log.Info("database seed complete",
-		"iterations", iterations,
-		"estimated_questions", iterations*cfg.Job.BatchSize*72,
-	)
-
+	log.Info("question generator job completed successfully")
 	return nil
 }
