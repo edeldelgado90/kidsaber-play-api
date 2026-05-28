@@ -53,6 +53,9 @@ type Config struct {
 	BatchSize         int
 	MaxPerCombination int
 	SeedIterations    int
+	// CombinationDelay is the pause inserted between consecutive LLM calls
+	// to stay within the provider's rate limit. Default: 4 s (≤ 15 RPM).
+	CombinationDelay  time.Duration
 }
 
 // topicPickerI abstracts the TopicPicker for injection.
@@ -114,9 +117,23 @@ func (j *QuestionGeneratorJob) Run(ctx context.Context) error {
 
 	var failedDetails []domain.JobErrorDetail
 
-	for _, combo := range combinations {
+	for i, combo := range combinations {
 		if ctx.Err() != nil {
 			j.logger.Warn("job context cancelled, stopping early")
+			break
+		}
+
+		// Throttle between calls to respect the LLM provider's rate limit.
+		// Skip the delay before the very first combination.
+		if i > 0 && j.cfg.CombinationDelay > 0 {
+			select {
+			case <-ctx.Done():
+				j.logger.Warn("job context cancelled during throttle delay, stopping early")
+				break
+			case <-time.After(j.cfg.CombinationDelay):
+			}
+		}
+		if ctx.Err() != nil {
 			break
 		}
 
