@@ -39,24 +39,6 @@ type openAIError struct {
 	Code    any    `json:"code,omitempty"`
 }
 
-// RateLimitError carries the HTTP 429 details returned by the LLM provider.
-// It wraps domain.ErrRateLimit so callers can still use errors.Is, and
-// additionally exposes the Retry-After value and the raw provider message
-// so the backoff logic and logs have precise information.
-type RateLimitError struct {
-	RetryAfter time.Duration // 0 if the header was absent or unparseable
-	Message    string        // provider error message from the response body
-}
-
-func (e *RateLimitError) Error() string {
-	if e.Message != "" {
-		return fmt.Sprintf("%s: %s", domain.ErrRateLimit.Error(), e.Message)
-	}
-	return domain.ErrRateLimit.Error()
-}
-
-func (e *RateLimitError) Is(target error) bool { return target == domain.ErrRateLimit }
-
 // LLMClient wraps an OpenAI-compatible HTTP API.
 // Works with Gemini Flash, Groq, and Ollama via different env vars.
 type LLMClient struct {
@@ -118,22 +100,7 @@ func (c *LLMClient) Complete(ctx context.Context, prompt string) (string, error)
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		rlErr := &RateLimitError{}
-
-		// Parse Retry-After header (seconds integer, as sent by Gemini / Groq / OpenAI).
-		if ra := resp.Header.Get("Retry-After"); ra != "" {
-			if secs, parseErr := time.ParseDuration(ra + "s"); parseErr == nil {
-				rlErr.RetryAfter = secs
-			}
-		}
-
-		// Extract provider message from the body (best-effort; never fatal).
-		var rateLimitResp openAIResponse
-		if jsonErr := json.Unmarshal(respBytes, &rateLimitResp); jsonErr == nil && rateLimitResp.Error != nil {
-			rlErr.Message = rateLimitResp.Error.Message
-		}
-
-		return "", rlErr
+		return "", fmt.Errorf("%w", domain.ErrRateLimit)
 	}
 	if resp.StatusCode >= 500 {
 		return "", fmt.Errorf("LLM provider error (%d)", resp.StatusCode)
