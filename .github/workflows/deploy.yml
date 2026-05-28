@@ -50,14 +50,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push container
+      - name: Build and push API server image
         run: |
           docker build \
             --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest \
             .
           docker push europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest
 
-      - name: Deploy to Cloud Run
+      - name: Build and push job image
+        run: |
+          docker build \
+            --file Dockerfile.job \
+            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest \
+            .
+          docker push europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest
+
+      - name: Deploy API server to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: kidsaber-api
@@ -75,20 +83,51 @@ jobs:
             AUTH_ENABLED=true
             CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
 
+      - name: Deploy question generator Cloud Run Job
+        run: |
+          gcloud run jobs deploy kidsaber-job \
+            --image=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest \
+            --region=europe-west1 \
+            --task-timeout=3h \
+            --max-retries=1 \
+            --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
+            --set-env-vars="APP_ENV=production,\
+          DATABASE_URL=${{ secrets.DATABASE_URL }},\
+          LLM_PROVIDER=${{ secrets.LLM_PROVIDER }},\
+          LLM_API_KEY=${{ secrets.LLM_API_KEY }},\
+          LLM_MODEL=${{ secrets.LLM_MODEL }},\
+          LLM_BASE_URL=${{ secrets.LLM_BASE_URL }},\
+          NOTIFY_WEBHOOK_URL=${{ secrets.NOTIFY_WEBHOOK_URL }},\
+          JOB_BATCH_SIZE=10,\
+          JOB_MAX_PER_COMBINATION=100"
+
+      - name: Upsert Cloud Scheduler trigger
+        run: |
+          if gcloud scheduler jobs describe kidsaber-job-trigger \
+              --location=europe-west1 &>/dev/null; then
+            gcloud scheduler jobs update http kidsaber-job-trigger \
+              --location=europe-west1 \
+              --schedule="0 3 * * *" \
+              --time-zone="UTC" \
+              --uri="https://run.googleapis.com/v2/projects/${{ secrets.GCP_PROJECT_ID }}/locations/europe-west1/jobs/kidsaber-job:run" \
+              --message-body="{}" \
+              --oauth-service-account-email=${{ secrets.GCP_SERVICE_ACCOUNT }} \
+              --attempt-deadline=30m
+          else
+            gcloud scheduler jobs create http kidsaber-job-trigger \
+              --location=europe-west1 \
+              --schedule="0 3 * * *" \
+              --time-zone="UTC" \
+              --uri="https://run.googleapis.com/v2/projects/${{ secrets.GCP_PROJECT_ID }}/locations/europe-west1/jobs/kidsaber-job:run" \
+              --message-body="{}" \
+              --oauth-service-account-email=${{ secrets.GCP_SERVICE_ACCOUNT }} \
+              --attempt-deadline=30m
+          fi
+
 # ── Required GitHub Actions Secrets ─────────────────────────────────────────
 # GCP_PROJECT_ID               — Google Cloud project ID
 # GCP_WORKLOAD_IDENTITY_PROVIDER — keyless auth provider
-# GCP_SERVICE_ACCOUNT          — service account email for Cloud Run deploy
-#
-# ── One-time GCP setup (run once before first deploy) ────────────────────────
-# gcloud artifacts repositories create kidsaber \
-#   --repository-format=docker \
-#   --location=europe-west1 \
-#   --project=$GCP_PROJECT_ID
-#
-# gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
-#   --member="serviceAccount:$GCP_SERVICE_ACCOUNT" \
-#   --role="roles/artifactregistry.writer"
+# GCP_SERVICE_ACCOUNT          — service account email (deploy + Cloud Scheduler invoker)
 # DATABASE_URL                 — Neon PostgreSQL (postgres://...?sslmode=require)
 # LLM_PROVIDER                 — gemini | groq | ollama
 # LLM_API_KEY                  — LLM provider API key
@@ -97,3 +136,21 @@ jobs:
 # NOTIFY_WEBHOOK_URL           — Slack/Discord webhook URL
 # API_KEY                      — strong random key sent by the mobile app
 # CORS_ALLOWED_ORIGINS         — comma-separated list of allowed origins
+#
+# ── One-time GCP setup (run once before first deploy) ────────────────────────
+# 1. Artifact Registry
+# gcloud artifacts repositories create kidsaber \
+#   --repository-format=docker \
+#   --location=europe-west1
+#
+# gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+#   --member="serviceAccount:$GCP_SERVICE_ACCOUNT" \
+#   --role="roles/artifactregistry.writer"
+#
+# 2. Allow the service account to invoke Cloud Run Jobs (needed by Cloud Scheduler)
+# gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+#   --member="serviceAccount:$GCP_SERVICE_ACCOUNT" \
+#   --role="roles/run.invoker"
+#
+# 3. Enable Cloud Scheduler API (if not already enabled)
+# gcloud services enable cloudscheduler.googleapis.com --project=$GCP_PROJECT_ID
