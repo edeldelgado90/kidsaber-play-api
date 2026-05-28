@@ -47,11 +47,15 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push container
         run: |
-          gcloud builds submit \
-            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api \
-            --project ${{ secrets.GCP_PROJECT_ID }}
+          docker build \
+            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest \
+            .
+          docker push europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest
 
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
