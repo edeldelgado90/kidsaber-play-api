@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/robfig/cron/v3"
 
 	"github.com/kidsaber/kidsaber-play-api/internal/domain"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/notify"
@@ -51,11 +50,9 @@ func init() {
 
 // Config holds the job configuration.
 type Config struct {
-	Schedule          string
 	BatchSize         int
 	MaxPerCombination int
 	SeedIterations    int
-	Enabled           bool
 }
 
 // topicPickerI abstracts the TopicPicker for injection.
@@ -63,8 +60,8 @@ type topicPickerI interface {
 	Pick(subject domain.Subject, grade int, gameType domain.GameType) (string, error)
 }
 
-// QuestionGeneratorJob pre-fills the question bank on a cron schedule.
-// For each of the 72 combinations it: generates → inserts → deletes excess (most-used).
+// QuestionGeneratorJob pre-fills the question bank across all 72 subject×grade×type combinations.
+// Designed to be triggered externally (e.g. Cloud Scheduler → Cloud Run Job); run once per invocation.
 type QuestionGeneratorJob struct {
 	generator  questions.QuestionGenerator
 	repository questions.QuestionRepository
@@ -73,7 +70,6 @@ type QuestionGeneratorJob struct {
 	picker     topicPickerI
 	cfg        Config
 	logger     *slog.Logger
-	cron       *cron.Cron
 }
 
 // NewQuestionGeneratorJob creates a QuestionGeneratorJob.
@@ -97,39 +93,9 @@ func NewQuestionGeneratorJob(
 	}
 }
 
-// Start registers the cron job and starts the scheduler.
-// Does nothing if job is disabled.
-func (j *QuestionGeneratorJob) Start() error {
-	if !j.cfg.Enabled {
-		j.logger.Info("question generator job is disabled")
-		return nil
-	}
-
-	j.cron = cron.New()
-	_, err := j.cron.AddFunc(j.cfg.Schedule, func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-		defer cancel()
-		j.Run(ctx)
-	})
-	if err != nil {
-		return fmt.Errorf("scheduling job: %w", err)
-	}
-
-	j.cron.Start()
-	j.logger.Info("question generator job started", "schedule", j.cfg.Schedule)
-	return nil
-}
-
-// Stop gracefully shuts down the cron scheduler.
-func (j *QuestionGeneratorJob) Stop() {
-	if j.cron != nil {
-		j.cron.Stop()
-	}
-}
-
-// Run executes one full job pass over all 72 combinations.
-// Can be called directly for seeding (cmd/seed/main.go).
-func (j *QuestionGeneratorJob) Run(ctx context.Context) {
+// Run executes one full pass over all 72 combinations.
+// Returns an error if any combination failed so callers can propagate a non-zero exit code.
+func (j *QuestionGeneratorJob) Run(ctx context.Context) error {
 	jobRun := &domain.JobRun{
 		ID:                uuid.New().String(),
 		StartedAt:         time.Now().UTC(),
@@ -271,5 +237,10 @@ func (j *QuestionGeneratorJob) Run(ctx context.Context) {
 		if alertErr := j.notifier.Alert(context.Background(), event); alertErr != nil {
 			j.logger.Warn("failed to send job failure notification", "error", alertErr)
 		}
+
+		return fmt.Errorf("job completed with %d/%d combinations failed (status: %s)",
+			jobRun.CombinationsFailed, len(combinations), jobRun.Status)
 	}
+
+	return nil
 }

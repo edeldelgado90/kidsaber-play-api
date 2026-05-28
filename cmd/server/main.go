@@ -16,7 +16,6 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/internal/adapter/notify"
 	"github.com/kidsaber/kidsaber-play-api/internal/adapter/repository/postgres"
 	"github.com/kidsaber/kidsaber-play-api/internal/config"
-	"github.com/kidsaber/kidsaber-play-api/internal/job"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
 	"github.com/kidsaber/kidsaber-play-api/pkg/logger"
 	"github.com/kidsaber/kidsaber-play-api/pkg/validator"
@@ -104,28 +103,6 @@ func run() error {
 		RequestTimeout:   cfg.Server.Timeout,
 		RateLimitEnabled: true,
 	})
-
-	// ── Background Job ─────────────────────────────────────────────────────────
-	generatorJob := job.NewQuestionGeneratorJob(
-		llmGen,
-		repo,
-		repo,
-		notifier,
-		topicPicker,
-		job.Config{
-			Schedule:          cfg.Job.Schedule,
-			BatchSize:         cfg.Job.BatchSize,
-			MaxPerCombination: cfg.Job.MaxPerCombination,
-			SeedIterations:    cfg.Job.SeedIterations,
-			Enabled:           cfg.Job.Enabled,
-		},
-		log,
-	)
-
-	if err := generatorJob.Start(); err != nil {
-		return fmt.Errorf("starting generator job: %w", err)
-	}
-	defer generatorJob.Stop()
 
 	// ── HTTP Server ────────────────────────────────────────────────────────────
 	srv := &http.Server{
