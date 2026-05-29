@@ -134,7 +134,9 @@ func (g *LLMGenerator) Generate(ctx context.Context, params questions.GeneratePa
 
 // completeWithRateLimitBackoff calls the LLM client and retries with exponential backoff
 // when the provider returns a 429. Non-rate-limit errors are returned immediately.
-// Backoff schedule: 30 s → 60 s → 120 s (3 retries, then gives up).
+// Default backoff schedule: 30 s → 60 s → 120 s (3 retries, then gives up).
+// If the provider sends a Retry-After header its value is used instead of the
+// calculated delay, so we honour the provider's own guidance precisely.
 func (g *LLMGenerator) completeWithRateLimitBackoff(ctx context.Context, prompt string) (string, error) {
 	const maxRLRetries = 3
 	const baseDelay = 30 * time.Second
@@ -149,9 +151,23 @@ func (g *LLMGenerator) completeWithRateLimitBackoff(ctx context.Context, prompt 
 			return "", err // not a rate-limit error — surface it immediately
 		}
 
-		delay := baseDelay * (1 << i) // 30 s, 60 s, 120 s
+		// Use Retry-After from the provider when available; otherwise fall back
+		// to the exponential schedule (30 s → 60 s → 120 s).
+		delay := baseDelay * (1 << i)
+		providerMsg := ""
+		if rlErr := new(RateLimitError); errors.As(err, &rlErr) {
+			providerMsg = rlErr.Message
+			if rlErr.RetryAfter > 0 {
+				delay = rlErr.RetryAfter
+			}
+		}
+
 		g.logger.Warn("LLM rate limited, backing off",
-			"delay_s", delay.Seconds(), "rl_attempt", i+1, "max_rl_retries", maxRLRetries)
+			"delay_s", int(delay.Seconds()),
+			"rl_attempt", i+1,
+			"max_rl_retries", maxRLRetries,
+			"provider_msg", providerMsg,
+		)
 
 		select {
 		case <-ctx.Done():
