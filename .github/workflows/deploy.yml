@@ -81,6 +81,7 @@ jobs:
             NOTIFY_WEBHOOK_URL=${{ secrets.NOTIFY_WEBHOOK_URL }}
             API_KEY=${{ secrets.API_KEY }}
             AUTH_ENABLED=true
+            FIREBASE_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
 
       - name: Deploy question generator Cloud Run Job

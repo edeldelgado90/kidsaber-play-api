@@ -17,6 +17,7 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/internal/adapter/repository/postgres"
 	"github.com/kidsaber/kidsaber-play-api/internal/config"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
+	"github.com/kidsaber/kidsaber-play-api/pkg/appcheck"
 	"github.com/kidsaber/kidsaber-play-api/pkg/logger"
 	"github.com/kidsaber/kidsaber-play-api/pkg/validator"
 )
@@ -86,17 +87,26 @@ func run() error {
 	questionsHandler := httpAdapter.NewQuestionsHandler(uc, log)
 	adminHandler := httpAdapter.NewAdminHandler(repo, log)
 
-	// TokenService signs and validates device tokens for POST /auth/token.
-	// The signing secret is read from TOKEN_SECRET env var; falls back to a value
-	// derived from API_KEY if TOKEN_SECRET is not explicitly set (see config.Load).
-	tokenService := httpAdapter.NewTokenService([]byte(cfg.Auth.TokenSecret), cfg.Auth.TokenTTL)
-	tokenHandler := httpAdapter.NewTokenHandler(tokenService, log)
+	// ── Firebase App Check ─────────────────────────────────────────────────────
+	// When FIREBASE_PROJECT_ID is set, mobile/web clients can authenticate using
+	// a Firebase App Check token (X-Firebase-AppCheck header) instead of the
+	// static API key. On Cloud Run, ADC are available automatically.
+	var appCheckValidator httpAdapter.AppCheckValidator
+	if cfg.Auth.FirebaseProjectID != "" {
+		v, err := appcheck.NewValidator(ctx, cfg.Auth.FirebaseProjectID)
+		if err != nil {
+			return fmt.Errorf("initialising firebase app check: %w", err)
+		}
+		appCheckValidator = v
+		log.Info("firebase app check enabled", "project", cfg.Auth.FirebaseProjectID)
+	} else {
+		log.Info("firebase app check disabled — API key only (FIREBASE_PROJECT_ID not set)")
+	}
 
 	router := httpAdapter.NewRouter(httpAdapter.RouterConfig{
 		QuestionsHandler: questionsHandler,
 		AdminHandler:     adminHandler,
-		TokenHandler:     tokenHandler,
-		TokenValidator:   tokenService,
+		AppCheck:         appCheckValidator,
 		Logger:           log,
 		AuthEnabled:      cfg.Auth.Enabled,
 		APIKey:           cfg.Auth.APIKey,

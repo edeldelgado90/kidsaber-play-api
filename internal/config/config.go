@@ -1,9 +1,6 @@
 package config
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -51,20 +48,14 @@ type DBConfig struct {
 
 // AuthConfig holds API authentication settings.
 type AuthConfig struct {
-	Enabled bool   `env:"AUTH_ENABLED" envDefault:"false"`
+	Enabled bool   `env:"AUTH_ENABLED"          envDefault:"false"`
 	APIKey  string `env:"API_KEY"`
 
-	// TokenSecret is the HMAC-SHA256 signing key for device tokens issued by
-	// POST /auth/token. If left empty it is automatically derived from API_KEY
-	// using HKDF-lite so no extra configuration is required for basic deployments.
-	// Set TOKEN_SECRET explicitly to rotate tokens independently of the API key.
-	TokenSecret string `env:"TOKEN_SECRET"`
-
-	// TokenTTLS is the device token lifetime in seconds (default 86400 = 24 h).
-	TokenTTLS int `env:"TOKEN_TTL_S" envDefault:"86400"`
-
-	// TokenTTL is derived from TokenTTLS at load time.
-	TokenTTL time.Duration
+	// FirebaseProjectID enables Firebase App Check validation when set.
+	// Mobile and web clients must include a valid App Check token in the
+	// X-Firebase-AppCheck header. When empty, only the static API key is
+	// accepted (useful for local development and CI).
+	FirebaseProjectID string `env:"FIREBASE_PROJECT_ID"`
 }
 
 // JobConfig holds question generator job settings.
@@ -107,26 +98,11 @@ func Load() (*Config, error) {
 	cfg.Server.Timeout = time.Duration(cfg.Server.TimeoutS) * time.Second
 	cfg.LLM.Timeout = time.Duration(cfg.LLM.TimeoutS) * time.Second
 	cfg.LLM.RetryDelay = time.Duration(cfg.LLM.RetryDelayS) * time.Second
-	cfg.Auth.TokenTTL = time.Duration(cfg.Auth.TokenTTLS) * time.Second
 	cfg.Job.CombinationDelay = time.Duration(cfg.Job.CombinationDelayS) * time.Second
 
 	// Validate: auth enabled requires an API key
 	if cfg.Auth.Enabled && cfg.Auth.APIKey == "" {
 		return nil, fmt.Errorf("AUTH_ENABLED=true but API_KEY is not set")
-	}
-
-	// Derive TOKEN_SECRET from API_KEY if not explicitly configured.
-	// Uses HMAC-SHA256 as a simple KDF so the token signing key is
-	// cryptographically independent of (but derived from) the static key.
-	// Falls back to a dev-only placeholder when both are empty.
-	if cfg.Auth.TokenSecret == "" {
-		seed := cfg.Auth.APIKey
-		if seed == "" {
-			seed = "kidsaber-dev-placeholder-not-for-production"
-		}
-		mac := hmac.New(sha256.New, []byte(seed))
-		mac.Write([]byte("kidsaber-device-token-secret-v1"))
-		cfg.Auth.TokenSecret = hex.EncodeToString(mac.Sum(nil))
 	}
 
 	return cfg, nil

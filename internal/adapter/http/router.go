@@ -12,20 +12,17 @@ import (
 type RouterConfig struct {
 	QuestionsHandler *QuestionsHandler
 	AdminHandler     *AdminHandler
-	// TokenHandler handles POST /auth/token. If nil the endpoint is not registered.
-	TokenHandler *TokenHandler
-	// TokenValidator validates device tokens issued by POST /auth/token.
-	// When set, GET /questions accepts both a static API key and a valid device token.
-	// Pass nil to accept only the static API key.
-	TokenValidator TokenValidator
-	Logger         *slog.Logger
-	AuthEnabled    bool
-	APIKey         string
-	AllowedOrigins string
-	RequestTimeout time.Duration
+	Logger           *slog.Logger
+	AuthEnabled      bool
+	APIKey           string
+	AllowedOrigins   string
+	RequestTimeout   time.Duration
 	// RateLimitEnabled activates the IP-based rate limiter (60 req/min per IP).
 	// Should be true in production; can be disabled in tests to avoid flakiness.
 	RateLimitEnabled bool
+	// AppCheck validates Firebase App Check tokens from mobile/web clients
+	// (X-Firebase-AppCheck header). Pass nil to accept only the static API key.
+	AppCheck AppCheckValidator
 }
 
 const (
@@ -53,19 +50,13 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	// Public routes — no auth required
 	r.Get("/health", HealthHandler)
 
-	// POST /auth/token — issues short-lived device tokens for mobile clients.
-	// Public: no prior credential needed. Rate-limited by the global limiter.
-	if cfg.TokenHandler != nil {
-		r.Post("/auth/token", cfg.TokenHandler.Issue)
-	}
-
-	// Protected routes — accepts static API key OR valid device token
+	// Protected routes — accepts static API key OR Firebase App Check token
 	r.Group(func(r chi.Router) {
-		r.Use(AuthMiddleware(cfg.AuthEnabled, cfg.APIKey, cfg.TokenValidator))
+		r.Use(AuthMiddleware(cfg.AuthEnabled, cfg.APIKey, cfg.AppCheck))
 		r.Get("/questions", cfg.QuestionsHandler.GetQuestions)
 	})
 
-	// Admin routes — static API key only (no device token accepted)
+	// Admin routes — static API key only (App Check not accepted)
 	r.Group(func(r chi.Router) {
 		r.Use(AuthMiddleware(cfg.APIKey != "", cfg.APIKey, nil))
 		r.Get("/admin/jobs", cfg.AdminHandler.GetJobRuns)

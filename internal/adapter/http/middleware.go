@@ -101,17 +101,23 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// AuthMiddleware validates the bearer credential on protected routes.
+// AppCheckValidator validates Firebase App Check tokens sent by mobile/web clients.
+// The token is expected in the X-Firebase-AppCheck request header.
+type AppCheckValidator interface {
+	VerifyToken(token string) error
+}
+
+// AuthMiddleware validates credentials on protected routes.
 //
 // Accepted credentials (when enabled=true):
-//  1. Static API key — constant-time compared against apiKey; suitable for
-//     server-to-server calls and admin tooling.
-//  2. Device token — validated by validator.ValidateToken; issued by
-//     POST /auth/token for mobile clients. Pass nil to disable token auth.
+//  1. Static API key — Authorization: Bearer <key> or X-API-Key header;
+//     constant-time compared; for server-to-server calls and admin tooling.
+//  2. Firebase App Check token — X-Firebase-AppCheck header; issued by Google
+//     for genuine app instances (iOS/Android/Web). Pass nil to disable.
 //
 // Uses constant-time comparison for the static key to prevent timing attacks.
 // Returns 401 with a generic message — never reveals which check failed.
-func AuthMiddleware(enabled bool, apiKey string, validator TokenValidator) func(http.Handler) http.Handler {
+func AuthMiddleware(enabled bool, apiKey string, appCheck AppCheckValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !enabled {
@@ -119,25 +125,25 @@ func AuthMiddleware(enabled bool, apiKey string, validator TokenValidator) func(
 				return
 			}
 
-			key := extractAPIKey(r)
-			if key == "" {
-				writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid or missing API key")
-				return
-			}
-
 			// 1. Accept static API key (constant-time comparison).
-			if apiKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) == 1 {
-				next.ServeHTTP(w, r)
-				return
+			if key := extractAPIKey(r); key != "" && apiKey != "" {
+				if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) == 1 {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 
-			// 2. Accept a valid device token issued by POST /auth/token.
-			if validator != nil && validator.ValidateToken(key) == nil {
-				next.ServeHTTP(w, r)
-				return
+			// 2. Accept a valid Firebase App Check token.
+			if appCheck != nil {
+				if tok := r.Header.Get("X-Firebase-AppCheck"); tok != "" {
+					if appCheck.VerifyToken(tok) == nil {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
 			}
 
-			writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid or missing API key")
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid or missing credentials")
 		})
 	}
 }
