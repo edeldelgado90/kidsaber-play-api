@@ -7,42 +7,87 @@ import (
 	"html/template"
 	"net/smtp"
 	"strings"
+	"sync"
 	"time"
 
 	unotify "github.com/kidsaber/kidsaber-play-api/internal/usecase/notify"
 )
 
 // SMTPNotifier sends email notifications via SMTP using Go stdlib net/smtp.
+// When dailyLimit > 0 the notifier tracks how many emails have been sent
+// on the current UTC day and silently drops further sends once the limit
+// is reached, resetting the counter automatically at midnight UTC.
 type SMTPNotifier struct {
-	host     string
-	port     int
-	user     string
-	password string
-	from     string
-	to       []string
+	host       string
+	port       int
+	user       string
+	password   string
+	from       string
+	to         []string
+	dailyLimit int
+
+	mu        sync.Mutex
+	sentToday int
+	lastDay   time.Time // UTC day of the last successful send (or initialisation)
 }
 
 // NewSMTPNotifier creates an SMTPNotifier.
-// Returns nil when host is empty (disabled).
-func NewSMTPNotifier(host string, port int, user, password, from, to string) *SMTPNotifier {
+// Returns nil (as NotificationService) when host is empty so MultiNotifier can filter it out safely.
+// dailyLimit caps outgoing emails per UTC day; 0 means no cap.
+func NewSMTPNotifier(host string, port int, user, password, from, to string, dailyLimit int) unotify.NotificationService {
 	if host == "" {
 		return nil
 	}
 	return &SMTPNotifier{
-		host:     host,
-		port:     port,
-		user:     user,
-		password: password,
-		from:     from,
-		to:       parseRecipients(to),
+		host:       host,
+		port:       port,
+		user:       user,
+		password:   password,
+		from:       from,
+		to:         parseRecipients(to),
+		dailyLimit: dailyLimit,
+		lastDay:    today(),
 	}
+}
+
+// today returns the current UTC date truncated to midnight.
+func today() time.Time {
+	return time.Now().UTC().Truncate(24 * time.Hour)
+}
+
+// withinDailyLimit checks whether another email can be sent and increments the
+// counter if so. Returns false (and the remaining budget) when the limit is
+// exceeded. The caller must not hold n.mu when calling this.
+func (n *SMTPNotifier) withinDailyLimit() bool {
+	if n.dailyLimit == 0 {
+		return true
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if t := today(); t.After(n.lastDay) {
+		n.sentToday = 0
+		n.lastDay = t
+	}
+
+	if n.sentToday >= n.dailyLimit {
+		return false
+	}
+	n.sentToday++
+	return true
 }
 
 // Alert sends a notification email. Best-effort — no retry.
 // ctx is checked for cancellation before sending.
+// Returns an error (without sending) when the daily limit has been reached.
 func (n *SMTPNotifier) Alert(ctx context.Context, event unotify.NotificationEvent) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+
+	if !n.withinDailyLimit() {
+		return fmt.Errorf("SMTP daily limit of %d emails reached; skipping notification", n.dailyLimit)
 	}
 
 	subject, plainBody, htmlBody := buildEmailContent(event)

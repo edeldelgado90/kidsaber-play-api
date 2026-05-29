@@ -36,8 +36,8 @@ type WebhookNotifier struct {
 }
 
 // NewWebhookNotifier creates a WebhookNotifier.
-// Returns nil when url is empty (disabled).
-func NewWebhookNotifier(url string) *WebhookNotifier {
+// Returns nil (as NotificationService) when url is empty so MultiNotifier can filter it out safely.
+func NewWebhookNotifier(url string) notify.NotificationService {
 	if url == "" {
 		return nil
 	}

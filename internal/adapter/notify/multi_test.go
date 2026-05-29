@@ -87,6 +87,6 @@ func TestWebhookNotifier_NilWhenEmptyURL(t *testing.T) {
 }
 
 func TestSMTPNotifier_NilWhenEmptyHost(t *testing.T) {
-	n := notify.NewSMTPNotifier("", 587, "", "", "", "")
+	n := notify.NewSMTPNotifier("", 587, "", "", "", "", 50)
 	assert.Nil(t, n)
 }

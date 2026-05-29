@@ -67,6 +67,7 @@ func run() error {
 		cfg.Notify.SMTPHost, cfg.Notify.SMTPPort,
 		cfg.Notify.SMTPUser, cfg.Notify.SMTPPass,
 		cfg.Notify.SMTPFrom, cfg.Notify.SMTPTo,
+		cfg.Notify.SMTPDailyLimit,
 	)
 	notifier := notify.NewMultiNotifier(log, webhookNotifier, smtpNotifier)
 
