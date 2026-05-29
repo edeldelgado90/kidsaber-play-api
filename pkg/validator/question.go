@@ -23,9 +23,8 @@ const optionMultipleSchemaStr = `{
   "minItems": 1,
   "items": {
     "type": "object",
-    "required": ["id", "type", "subject", "grade", "topic", "statement", "options", "correctAnswers", "meta"],
+    "required": ["type", "subject", "grade", "topic", "statement", "options", "correctAnswers", "meta"],
     "properties": {
-      "id":        { "type": "string", "minLength": 1 },
       "type":      { "type": "string", "enum": ["option_multiple"] },
       "subject":   { "type": "string", "enum": ["mathematics","language","english","science"] },
       "grade":     { "type": "integer", "minimum": 1, "maximum": 6 },
@@ -64,9 +63,8 @@ const fillInTheBlanksSchemaStr = `{
   "minItems": 1,
   "items": {
     "type": "object",
-    "required": ["id","type","subject","grade","topic","statement","options","correctAnswers","meta"],
+    "required": ["type","subject","grade","topic","statement","options","correctAnswers","meta"],
     "properties": {
-      "id":        { "type": "string", "minLength": 1 },
       "type":      { "type": "string", "enum": ["fill_in_the_blanks"] },
       "subject":   { "type": "string", "enum": ["mathematics","language","english","science"] },
       "grade":     { "type": "integer", "minimum": 1, "maximum": 6 },
@@ -105,9 +103,8 @@ const matchingSchemaStr = `{
   "minItems": 1,
   "items": {
     "type": "object",
-    "required": ["id","type","subject","grade","topic","statement","pairs","correctAnswers","meta"],
+    "required": ["type","subject","grade","topic","statement","pairs","correctAnswers","meta"],
     "properties": {
-      "id":        { "type": "string", "minLength": 1 },
       "type":      { "type": "string", "enum": ["matching"] },
       "subject":   { "type": "string", "enum": ["mathematics","language","english","science"] },
       "grade":     { "type": "integer", "minimum": 1, "maximum": 6 },

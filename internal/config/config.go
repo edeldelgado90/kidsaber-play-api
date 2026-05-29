@@ -36,10 +36,12 @@ type LLMConfig struct {
 	APIKey     string `env:"LLM_API_KEY"`
 	Model      string `env:"LLM_MODEL"       envDefault:"gemini-2.0-flash-lite"`
 	BaseURL    string `env:"LLM_BASE_URL"    envDefault:"https://generativelanguage.googleapis.com/v1beta/openai/"`
-	TimeoutS   int    `env:"LLM_TIMEOUT_S"   envDefault:"20"`
-	MaxRetries int    `env:"LLM_MAX_RETRIES" envDefault:"2"`
+	TimeoutS     int `env:"LLM_TIMEOUT_S"      envDefault:"20"`
+	MaxRetries   int `env:"LLM_MAX_RETRIES"    envDefault:"2"`
+	RetryDelayS  int `env:"LLM_RETRY_DELAY_S"  envDefault:"2"`
 
-	Timeout time.Duration // derived: TimeoutS * time.Second
+	Timeout    time.Duration // derived: TimeoutS * time.Second
+	RetryDelay time.Duration // derived: RetryDelayS * time.Second
 }
 
 // DBConfig holds PostgreSQL database settings.
@@ -104,6 +106,7 @@ func Load() (*Config, error) {
 	// Derive duration fields
 	cfg.Server.Timeout = time.Duration(cfg.Server.TimeoutS) * time.Second
 	cfg.LLM.Timeout = time.Duration(cfg.LLM.TimeoutS) * time.Second
+	cfg.LLM.RetryDelay = time.Duration(cfg.LLM.RetryDelayS) * time.Second
 	cfg.Auth.TokenTTL = time.Duration(cfg.Auth.TokenTTLS) * time.Second
 	cfg.Job.CombinationDelay = time.Duration(cfg.Job.CombinationDelayS) * time.Second
 
