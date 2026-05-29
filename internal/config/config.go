@@ -78,13 +78,14 @@ type JobConfig struct {
 
 // NotifyConfig holds notification settings for webhook and SMTP.
 type NotifyConfig struct {
-	WebhookURL string `env:"NOTIFY_WEBHOOK_URL"`
-	SMTPHost   string `env:"NOTIFY_SMTP_HOST"`
-	SMTPPort   int    `env:"NOTIFY_SMTP_PORT"     envDefault:"587"`
-	SMTPUser   string `env:"NOTIFY_SMTP_USER"`
-	SMTPPass   string `env:"NOTIFY_SMTP_PASSWORD"`
-	SMTPFrom   string `env:"NOTIFY_SMTP_FROM"`
-	SMTPTo     string `env:"NOTIFY_SMTP_TO"` // comma-separated
+	WebhookURL     string `env:"NOTIFY_WEBHOOK_URL"`
+	SMTPHost       string `env:"NOTIFY_SMTP_HOST"`
+	SMTPPort       int    `env:"NOTIFY_SMTP_PORT"            envDefault:"587"`
+	SMTPUser       string `env:"NOTIFY_SMTP_USER"`
+	SMTPPass       string `env:"NOTIFY_SMTP_PASSWORD"`
+	SMTPFrom       string `env:"NOTIFY_SMTP_FROM"`
+	SMTPTo         string `env:"NOTIFY_SMTP_TO"`              // comma-separated
+	SMTPDailyLimit int    `env:"NOTIFY_SMTP_DAILY_LIMIT"     envDefault:"50"` // 0 = unlimited
 }
 
 // CORSConfig holds CORS settings.
