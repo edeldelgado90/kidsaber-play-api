@@ -53,7 +53,6 @@ FORMATO DE RESPUESTA: responde ÚNICAMENTE con un array JSON válido. Sin markdo
 
 Schema de cada objeto del array:
 {
-  "id": "<uuid v4>",
   "type": "option_multiple",
   "subject": "{{.Subject}}",
   "grade": {{.Grade}},
@@ -75,7 +74,6 @@ Schema de cada objeto del array:
 
 Ejemplo de objeto válido:
 {
-  "id": "8a2f4c1e-9b37-4f23-a6d1-3e9b7c0a12f4",
   "type": "option_multiple",
   "subject": "mathematics",
   "grade": 3,
@@ -111,7 +109,6 @@ FORMATO DE RESPUESTA: responde ÚNICAMENTE con un array JSON válido. Sin markdo
 
 Schema de cada objeto del array:
 {
-  "id": "<uuid v4>",
   "type": "fill_in_the_blanks",
   "subject": "{{.Subject}}",
   "grade": {{.Grade}},
@@ -132,7 +129,6 @@ Schema de cada objeto del array:
 
 Ejemplo de objeto válido:
 {
-  "id": "1f6b9d82-4c51-43a7-92e0-7d8c5a1b3e29",
   "type": "fill_in_the_blanks",
   "subject": "language",
   "grade": 3,
@@ -167,7 +163,6 @@ FORMATO DE RESPUESTA: responde ÚNICAMENTE con un array JSON válido. Sin markdo
 
 Schema de cada objeto del array:
 {
-  "id": "<uuid v4>",
   "type": "matching",
   "subject": "{{.Subject}}",
   "grade": {{.Grade}},
@@ -190,7 +185,6 @@ Schema de cada objeto del array:
 
 Ejemplo de objeto válido:
 {
-  "id": "3c7e2a54-8b90-4c1f-b2e3-9a4d6f7b8c21",
   "type": "matching",
   "subject": "science",
   "grade": 3,

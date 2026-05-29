@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kidsaber/kidsaber-play-api/internal/domain"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
 	"github.com/kidsaber/kidsaber-play-api/pkg/validator"
@@ -19,15 +20,19 @@ type LLMGenerator struct {
 	validator   *validator.QuestionValidator
 	topicPicker *TopicPicker
 	maxRetries  int
+	retryDelay  time.Duration
 	logger      *slog.Logger
 }
 
 // NewLLMGenerator creates a configured LLMGenerator.
+// retryDelay is the pause inserted between consecutive validation-retry attempts
+// to avoid bursting the provider's RPM limit (e.g. 2 s keeps bursts well under 30 RPM).
 func NewLLMGenerator(
 	client *LLMClient,
 	v *validator.QuestionValidator,
 	topicPicker *TopicPicker,
 	maxRetries int,
+	retryDelay time.Duration,
 	logger *slog.Logger,
 ) *LLMGenerator {
 	return &LLMGenerator{
@@ -35,6 +40,7 @@ func NewLLMGenerator(
 		validator:   v,
 		topicPicker: topicPicker,
 		maxRetries:  maxRetries,
+		retryDelay:  retryDelay,
 		logger:      logger,
 	}
 }
@@ -78,6 +84,13 @@ func (g *LLMGenerator) Generate(ctx context.Context, params questions.GeneratePa
 
 	for attempt := 0; attempt <= g.maxRetries; attempt++ {
 		if attempt > 0 {
+			// Pause before retrying to avoid bursting the provider's RPM limit.
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(g.retryDelay):
+			}
+
 			// Prepend correction header for retry attempts
 			retryPrompt, buildErr := BuildRetryPrompt(basePrompt, lastValidationErrors, params.Count)
 			if buildErr != nil {
@@ -116,8 +129,10 @@ func (g *LLMGenerator) Generate(ctx context.Context, params questions.GeneratePa
 			continue
 		}
 
-		// Stamp the correct type/subject/grade on all questions (trust but verify)
+		// Stamp the correct type/subject/grade on all questions (trust but verify).
+		// Always assign a server-generated UUID — never trust the LLM to produce valid ones.
 		for i := range qs {
+			qs[i].ID = uuid.New().String()
 			qs[i].Type = params.Type
 			qs[i].Subject = params.Subject
 			qs[i].Grade = params.Grade

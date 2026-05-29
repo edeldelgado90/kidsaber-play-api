@@ -55,7 +55,7 @@ func run() error {
 		cfg.LLM.Timeout,
 	)
 	topicPicker := llm.NewTopicPicker()
-	llmGen := llm.NewLLMGenerator(llmClient, qValidator, topicPicker, cfg.LLM.MaxRetries, log)
+	llmGen := llm.NewLLMGenerator(llmClient, qValidator, topicPicker, cfg.LLM.MaxRetries, cfg.LLM.RetryDelay, log)
 
 	noopNotifier := notify.NewNoopNotifier()
 
@@ -69,6 +69,7 @@ func run() error {
 			BatchSize:         cfg.Job.BatchSize,
 			MaxPerCombination: cfg.Job.MaxPerCombination,
 			SeedIterations:    cfg.Job.SeedIterations,
+			CombinationDelay:  cfg.Job.CombinationDelay,
 		},
 		log,
 	)

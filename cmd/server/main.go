@@ -64,7 +64,7 @@ func run() error {
 		cfg.LLM.Timeout,
 	)
 	topicPicker := llm.NewTopicPicker()
-	llmGen := llm.NewLLMGenerator(llmClient, qValidator, topicPicker, cfg.LLM.MaxRetries, log)
+	llmGen := llm.NewLLMGenerator(llmClient, qValidator, topicPicker, cfg.LLM.MaxRetries, cfg.LLM.RetryDelay, log)
 
 	// ── Procedural Generator ───────────────────────────────────────────────────
 	calcGen := procedural.NewCalculatorGenerator()
