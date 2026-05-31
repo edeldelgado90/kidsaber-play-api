@@ -32,7 +32,7 @@ func run() error {
 	}
 
 	appEnv := os.Getenv("APP_ENV")
-	log := logger.New(appEnv)
+	log := logger.New(appEnv, cfg.Log.Level)
 	slog.SetDefault(log)
 
 	ctx := context.Background()

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -17,6 +18,12 @@ type Config struct {
 	Job    JobConfig
 	Notify NotifyConfig
 	CORS   CORSConfig
+	Log    LogConfig
+}
+
+// LogConfig holds logging settings.
+type LogConfig struct {
+	Level slog.Level `env:"LOG_LEVEL" envDefault:"INFO"`
 }
 
 // ServerConfig holds HTTP server settings.

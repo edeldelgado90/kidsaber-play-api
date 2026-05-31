@@ -7,11 +7,11 @@ import (
 
 // New creates a structured slog logger.
 // In production (env != "development") it uses JSON format; otherwise text format.
-func New(env string) *slog.Logger {
+func New(env string, level slog.Level) *slog.Logger {
 	var handler slog.Handler
 
 	opts := &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: level,
 	}
 
 	if env == "development" {
