@@ -38,7 +38,7 @@ func run() error {
 
 	// ── Logger ─────────────────────────────────────────────────────────────────
 	appEnv := os.Getenv("APP_ENV")
-	log := logger.New(appEnv)
+	log := logger.New(appEnv, cfg.Log.Level)
 	slog.SetDefault(log)
 	log.Info("starting KidSaber Play API", "port", cfg.Server.Port)
 
