@@ -210,6 +210,92 @@ func TestGetQuestionsUseCase_FallsBackToLLM_WhenPoolEmpty(t *testing.T) {
 	assert.True(t, llmCalled)
 }
 
+func TestGetQuestionsUseCase_RetriesDBBeforeLLM(t *testing.T) {
+	dbCallCount := 0
+	llmCalled := false
+
+	llmQuestions := make([]domain.Question, 10)
+	for i := range llmQuestions {
+		llmQuestions[i] = makeQuestion("llm-q-"+string(rune('0'+i)), "option_multiple", "mathematics", 3)
+	}
+
+	llmGen := &mockGenerator{
+		generateFunc: func(_ context.Context, _ questions.GenerateParams) ([]domain.Question, error) {
+			llmCalled = true
+			return llmQuestions, nil
+		},
+	}
+	repo := &mockRepo{
+		findRandomFunc: func(_ context.Context, _ questions.FindParams, _ int) ([]domain.Question, error) {
+			dbCallCount++
+			return nil, nil // always empty pool
+		},
+	}
+	notifier := &mockNotifier{}
+
+	uc := questions.NewGetQuestionsUseCase(
+		&mockGenerator{generateFunc: func(_ context.Context, _ questions.GenerateParams) ([]domain.Question, error) {
+			return nil, nil
+		}},
+		llmGen, repo, notifier, newTestLogger(),
+	)
+
+	result, err := uc.Execute(context.Background(), questions.GetQuestionsParams{
+		Subject: domain.SubjectMathematics,
+		Grade:   3,
+		Type:    domain.GameTypeOptionMultiple,
+		Count:   10,
+	})
+
+	require.NoError(t, err)
+	assert.Len(t, result, 10)
+	assert.Equal(t, 3, dbCallCount, "expected exactly 3 DB attempts before LLM fallback")
+	assert.True(t, llmCalled)
+}
+
+func TestGetQuestionsUseCase_ServesFromPoolOnSecondDBAttempt(t *testing.T) {
+	dbCallCount := 0
+	poolQuestions := make([]domain.Question, 10)
+	for i := range poolQuestions {
+		poolQuestions[i] = makeQuestion("pool-q-"+string(rune('0'+i)), "option_multiple", "mathematics", 3)
+	}
+
+	llmGen := &mockGenerator{
+		generateFunc: func(_ context.Context, _ questions.GenerateParams) ([]domain.Question, error) {
+			t.Fatal("LLM generator should not be called when pool succeeds on retry")
+			return nil, nil
+		},
+	}
+	repo := &mockRepo{
+		findRandomFunc: func(_ context.Context, _ questions.FindParams, count int) ([]domain.Question, error) {
+			dbCallCount++
+			if dbCallCount < 2 {
+				return nil, nil // first attempt returns empty
+			}
+			return poolQuestions[:count], nil // second attempt succeeds
+		},
+	}
+	notifier := &mockNotifier{}
+
+	uc := questions.NewGetQuestionsUseCase(
+		&mockGenerator{generateFunc: func(_ context.Context, _ questions.GenerateParams) ([]domain.Question, error) {
+			return nil, nil
+		}},
+		llmGen, repo, notifier, newTestLogger(),
+	)
+
+	result, err := uc.Execute(context.Background(), questions.GetQuestionsParams{
+		Subject: domain.SubjectMathematics,
+		Grade:   3,
+		Type:    domain.GameTypeOptionMultiple,
+		Count:   10,
+	})
+
+	require.NoError(t, err)
+	assert.Len(t, result, 10)
+	assert.Equal(t, 2, dbCallCount, "expected 2 DB attempts before serving from pool")
+}
+
 func TestGetQuestionsUseCase_LLMFails_ReturnsError(t *testing.T) {
 	llmGen := &mockGenerator{
 		generateFunc: func(_ context.Context, _ questions.GenerateParams) ([]domain.Question, error) {

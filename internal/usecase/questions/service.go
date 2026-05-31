@@ -8,11 +8,14 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/notify"
 )
 
+// maxDBAttempts is the number of times FindRandom is retried before falling back to the LLM.
+const maxDBAttempts = 3
+
 // GetQuestionsUseCase orchestrates question retrieval for a game session.
 //
 // Flow:
 //  1. quick_calculation → ProceduralGenerator (always; no DB)
-//  2. LLM types        → QuestionRepository.FindRandom (DB pool)
+//  2. LLM types        → QuestionRepository.FindRandom (up to 3 attempts)
 //  3. Pool empty/small → LLMGenerator fallback + async DB save + async pool_low alert
 type GetQuestionsUseCase struct {
 	proceduralGen QuestionGenerator
@@ -55,18 +58,29 @@ func (uc *GetQuestionsUseCase) Execute(ctx context.Context, params GetQuestionsP
 		})
 	}
 
-	// Serve from pre-generated DB pool.
+	// Serve from pre-generated DB pool — up to maxDBAttempts before falling back to LLM.
 	findParams := FindParams{
 		Subject: params.Subject,
 		Grade:   params.Grade,
 		Type:    params.Type,
 	}
 
-	questions, err := uc.repo.FindRandom(ctx, findParams, params.Count)
-	if err != nil {
-		uc.logger.Error("failed to query question pool", "error", err,
-			"subject", params.Subject, "grade", params.Grade, "type", params.Type)
-		// Fall through to LLM fallback.
+	var questions []domain.Question
+	for attempt := 1; attempt <= maxDBAttempts; attempt++ {
+		qs, err := uc.repo.FindRandom(ctx, findParams, params.Count)
+		if err != nil {
+			uc.logger.Error("failed to query question pool", "error", err,
+				"subject", params.Subject, "grade", params.Grade, "type", params.Type,
+				"attempt", attempt)
+			continue
+		}
+		questions = qs
+		if len(questions) >= params.Count {
+			break
+		}
+		uc.logger.Warn("question pool returned insufficient results",
+			"subject", params.Subject, "grade", params.Grade, "type", params.Type,
+			"found", len(questions), "needed", params.Count, "attempt", attempt)
 	}
 
 	if len(questions) >= params.Count {
@@ -83,7 +97,7 @@ func (uc *GetQuestionsUseCase) Execute(ctx context.Context, params GetQuestionsP
 		return questions[:params.Count], nil
 	}
 
-	// Pool is too small — alert asynchronously and fall back to LLM.
+	// All DB attempts exhausted without enough questions — alert and fall back to LLM.
 	go func() {
 		event := notify.NotificationEvent{
 			Type:   "pool_low",
@@ -97,7 +111,7 @@ func (uc *GetQuestionsUseCase) Execute(ctx context.Context, params GetQuestionsP
 		}
 	}()
 
-	uc.logger.Warn("question pool empty or too small, falling back to LLM",
+	uc.logger.Warn("question pool exhausted after all DB attempts, falling back to LLM",
 		"subject", params.Subject, "grade", params.Grade, "type", params.Type,
 		"found", len(questions), "needed", params.Count)
 
