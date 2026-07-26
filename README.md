@@ -158,7 +158,7 @@ make tidy         # go mod tidy + verify
 | `LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | `NOTIFY_WEBHOOK_URL` | Slack/Discord webhook for job alerts |
 | `API_KEY` | Strong random key for the mobile app |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins; supports `https://*.example.com` subdomain wildcards |
 
 ### 3. Deploy
 

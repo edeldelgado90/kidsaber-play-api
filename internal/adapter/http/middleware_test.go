@@ -151,6 +151,66 @@ func TestCORSMiddleware_OPTIONSPreflight(t *testing.T) {
 	assert.False(t, calledNext, "next handler should not be called for OPTIONS preflight")
 }
 
+func TestCORSMiddleware_PreflightAllowsAppCheckHeader(t *testing.T) {
+	wrapped := httpAdapter.CORSMiddleware("https://kidsaber-play.pages.dev")(okHandler())
+
+	req := httptest.NewRequest(http.MethodOptions, "/questions", nil)
+	req.Header.Set("Origin", "https://kidsaber-play.pages.dev")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "X-Firebase-AppCheck")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+	allowHeaders := rec.Header().Get("Access-Control-Allow-Headers")
+	// The auth middleware reads these; a preflight that omits them blocks the request.
+	assert.Contains(t, allowHeaders, "X-Firebase-AppCheck")
+	assert.Contains(t, allowHeaders, "X-API-Key")
+	assert.Contains(t, allowHeaders, "Authorization")
+	assert.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), "GET")
+	assert.Equal(t, "3600", rec.Header().Get("Access-Control-Max-Age"))
+}
+
+func TestCORSMiddleware_SetsVaryOrigin(t *testing.T) {
+	wrapped := httpAdapter.CORSMiddleware("https://kidsaber.app")(okHandler())
+
+	for _, origin := range []string{"https://kidsaber.app", "https://evil.com", ""} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		assert.Contains(t, rec.Header().Values("Vary"), "Origin", "origin=%q", origin)
+	}
+}
+
+func TestCORSMiddleware_WildcardPagesDevOrigin(t *testing.T) {
+	wrapped := httpAdapter.CORSMiddleware("https://*.pages.dev")(okHandler())
+
+	// Cloudflare Pages assigns a fresh hostname to every deployment.
+	origin := "https://a1b2c3d4.kidsaber-play.pages.dev"
+	req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+	req.Header.Set("Origin", origin)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, origin, rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.NotEqual(t, "*", rec.Header().Get("Access-Control-Allow-Origin"), "must echo the origin, never a wildcard")
+}
+
+func TestCORSMiddleware_WildcardDoesNotLeakToOtherDomains(t *testing.T) {
+	wrapped := httpAdapter.CORSMiddleware("https://*.pages.dev")(okHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+	req.Header.Set("Origin", "https://kidsaber-play.pages.dev.evil.com")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+}
+
 // ─── SecurityHeadersMiddleware ────────────────────────────────────────────────
 
 func TestSecurityHeadersMiddleware(t *testing.T) {

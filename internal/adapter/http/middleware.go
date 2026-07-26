@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -68,17 +69,30 @@ func TimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
-// CORSMiddleware adds CORS headers. Only origins in the allowlist are accepted.
-// Never uses wildcard (*) to prevent cross-origin data leaks.
+// corsAllowHeaders lists the request headers a browser may send cross-origin.
+// Must include every header the auth middleware reads, otherwise the preflight
+// fails and the browser blocks the request before it ever reaches the handler.
+const corsAllowHeaders = "Authorization, X-API-Key, X-Firebase-AppCheck, Content-Type"
+
+// corsMaxAge is how long a browser may cache the preflight result, in seconds.
+const corsMaxAge = "3600"
+
+// CORSMiddleware adds CORS headers. Only origins matching the allowlist are
+// accepted and the matched origin is echoed back — never a wildcard (*), which
+// would let any site read question data.
 func CORSMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
 	allowed := parseOrigins(allowedOrigins)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Origin-dependent response: caches must key on the Origin header.
+			w.Header().Add("Vary", "Origin")
+
 			origin := r.Header.Get("Origin")
-			if origin != "" && allowed[origin] {
+			if allowed.matches(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Authorization, X-API-Key, Content-Type")
+				w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
+				w.Header().Set("Access-Control-Max-Age", corsMaxAge)
 			}
 
 			if r.Method == http.MethodOptions {
@@ -255,14 +269,67 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// parseOrigins splits a comma-separated list of origins into a lookup map.
-func parseOrigins(s string) map[string]bool {
-	m := make(map[string]bool)
+// wildcardOrigin is an allowlist entry of the form "https://*.pages.dev",
+// split into the scheme and the host suffix the wildcard expands against.
+type wildcardOrigin struct {
+	scheme string // e.g. "https"
+	suffix string // e.g. ".pages.dev" (leading dot included)
+}
+
+// originMatcher decides whether a request Origin is allowed to read responses.
+type originMatcher struct {
+	exact    map[string]bool
+	wildcard []wildcardOrigin
+}
+
+// parseOrigins splits a comma-separated allowlist into exact origins plus
+// subdomain wildcard patterns.
+//
+// An entry is either an exact origin ("https://kidsaber.app") or carries a
+// single leading "*." in the host ("https://*.pages.dev"), which matches any
+// subdomain — needed for Cloudflare Pages, where every deployment gets its own
+// preview hostname. The wildcard requires at least one label in front of the
+// suffix, so "https://*.pages.dev" accepts "https://foo.pages.dev" and
+// "https://a.foo.pages.dev" but never the bare "https://pages.dev". Scheme and
+// port must still match exactly.
+func parseOrigins(s string) *originMatcher {
+	m := &originMatcher{exact: make(map[string]bool)}
 	for _, o := range strings.Split(s, ",") {
 		o = strings.TrimSpace(o)
-		if o != "" {
-			m[o] = true
+		if o == "" {
+			continue
 		}
+		if scheme, host, ok := strings.Cut(o, "://*."); ok && host != "" {
+			m.wildcard = append(m.wildcard, wildcardOrigin{scheme: scheme, suffix: "." + host})
+			continue
+		}
+		m.exact[o] = true
 	}
 	return m
+}
+
+// matches reports whether origin is in the allowlist. An empty origin (a
+// non-browser or same-origin request) never matches.
+func (m *originMatcher) matches(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	if m.exact[origin] {
+		return true
+	}
+	if len(m.wildcard) == 0 {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	for _, w := range m.wildcard {
+		// len check guarantees a non-empty label before the suffix, so the
+		// registrable domain itself is not accepted by its own wildcard.
+		if u.Scheme == w.scheme && len(u.Host) > len(w.suffix) && strings.HasSuffix(u.Host, w.suffix) {
+			return true
+		}
+	}
+	return false
 }
