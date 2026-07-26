@@ -3,6 +3,7 @@ package http_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -259,6 +260,111 @@ func TestSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 	assert.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-referrer", rec.Header().Get("Referrer-Policy"))
+}
+
+func TestGetQuestions_503_LLMTimeout(t *testing.T) {
+	repo := &mockQRepo{findFn: func(_ context.Context, _ questions.FindParams, _ int) ([]domain.Question, error) {
+		return nil, nil
+	}}
+	timedOutLLM := &mockGen{fn: func(_ context.Context, _ questions.GenerateParams) ([]domain.Question, error) {
+		return nil, domain.ErrLLMTimeout
+	}}
+
+	router := buildRouter(nopGen(), timedOutLLM, repo)
+	req := httptest.NewRequest(http.MethodGet, "/questions?subject=mathematics&grade=3&type=option_multiple", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	var body httpAdapter.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+	assert.Equal(t, "llm_timeout", body.Error)
+}
+
+func TestGetQuestions_500_InternalError(t *testing.T) {
+	repo := &mockQRepo{findFn: func(_ context.Context, _ questions.FindParams, _ int) ([]domain.Question, error) {
+		return nil, nil
+	}}
+	errGen := &mockGen{fn: func(_ context.Context, _ questions.GenerateParams) ([]domain.Question, error) {
+		return nil, errors.New("unexpected internal error")
+	}}
+
+	router := buildRouter(nopGen(), errGen, repo)
+	req := httptest.NewRequest(http.MethodGet, "/questions?subject=mathematics&grade=3&type=option_multiple", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	var body httpAdapter.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+	assert.Equal(t, "internal_error", body.Error)
+}
+
+func TestGetQuestions_400_NonIntegerCount(t *testing.T) {
+	router := buildRouter(nopGen(), nopGen(), &mockQRepo{findFn: func(_ context.Context, _ questions.FindParams, _ int) ([]domain.Question, error) {
+		return nil, nil
+	}})
+	req := httptest.NewRequest(http.MethodGet, "/questions?subject=mathematics&grade=3&type=option_multiple&count=abc", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestGetQuestions_400_CountOutOfRange(t *testing.T) {
+	router := buildRouter(nopGen(), nopGen(), &mockQRepo{findFn: func(_ context.Context, _ questions.FindParams, _ int) ([]domain.Question, error) {
+		return nil, nil
+	}})
+
+	for _, count := range []string{"0", "31"} {
+		req := httptest.NewRequest(http.MethodGet, "/questions?subject=mathematics&grade=3&type=option_multiple&count="+count, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code, "count=%s", count)
+	}
+}
+
+func TestGetQuestions_400_MissingGrade(t *testing.T) {
+	router := buildRouter(nopGen(), nopGen(), &mockQRepo{findFn: func(_ context.Context, _ questions.FindParams, _ int) ([]domain.Question, error) {
+		return nil, nil
+	}})
+	req := httptest.NewRequest(http.MethodGet, "/questions?subject=mathematics&type=option_multiple", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAdminJobsEndpoint_500_OnRepoError(t *testing.T) {
+	logger := newLogger()
+	errJobRepo := &errJobRepo{}
+	uc := questions.NewGetQuestionsUseCase(nopGen(), nopGen(), &mockQRepo{findFn: func(_ context.Context, _ questions.FindParams, _ int) ([]domain.Question, error) {
+		return nil, nil
+	}}, noopNotifier{}, logger)
+	qh := httpAdapter.NewQuestionsHandler(uc, logger)
+	ah := httpAdapter.NewAdminHandler(errJobRepo, logger)
+
+	router := httpAdapter.NewRouter(httpAdapter.RouterConfig{
+		QuestionsHandler: qh,
+		AdminHandler:     ah,
+		Logger:           logger,
+		AuthEnabled:      false,
+		AllowedOrigins:   "http://localhost:3000",
+		RequestTimeout:   30 * time.Second,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/jobs", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// errJobRepo is a job repo that always errors on FindRecent.
+type errJobRepo struct{}
+
+func (e *errJobRepo) Insert(_ context.Context, _ *domain.JobRun) error             { return nil }
+func (e *errJobRepo) Update(_ context.Context, _ *domain.JobRun) error             { return nil }
+func (e *errJobRepo) FindRecent(_ context.Context, _ int) ([]domain.JobRun, error) {
+	return nil, errors.New("db error")
 }
 
 func TestAuthMiddleware_401_WhenEnabled(t *testing.T) {
