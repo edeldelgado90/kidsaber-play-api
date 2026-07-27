@@ -36,13 +36,13 @@ type ServerConfig struct {
 
 // LLMConfig holds LLM provider settings.
 type LLMConfig struct {
-	Provider   string `env:"LLM_PROVIDER"    envDefault:"gemini"`
-	APIKey     string `env:"LLM_API_KEY"`
-	Model      string `env:"LLM_MODEL"       envDefault:"gemini-2.0-flash-lite"`
-	BaseURL    string `env:"LLM_BASE_URL"    envDefault:"https://generativelanguage.googleapis.com/v1beta/openai/"`
-	TimeoutS     int `env:"LLM_TIMEOUT_S"      envDefault:"20"`
-	MaxRetries   int `env:"LLM_MAX_RETRIES"    envDefault:"2"`
-	RetryDelayS  int `env:"LLM_RETRY_DELAY_S"  envDefault:"2"`
+	Provider    string `env:"LLM_PROVIDER"    envDefault:"gemini"`
+	APIKey      string `env:"LLM_API_KEY"`
+	Model       string `env:"LLM_MODEL"       envDefault:"gemini-2.0-flash-lite"`
+	BaseURL     string `env:"LLM_BASE_URL"    envDefault:"https://generativelanguage.googleapis.com/v1beta/openai/"`
+	TimeoutS    int    `env:"LLM_TIMEOUT_S"      envDefault:"20"`
+	MaxRetries  int    `env:"LLM_MAX_RETRIES"    envDefault:"2"`
+	RetryDelayS int    `env:"LLM_RETRY_DELAY_S"  envDefault:"2"`
 
 	Timeout    time.Duration // derived: TimeoutS * time.Second
 	RetryDelay time.Duration // derived: RetryDelayS * time.Second
@@ -68,10 +68,10 @@ type AuthConfig struct {
 // JobConfig holds question generator job settings.
 // The schedule is now managed externally by Cloud Scheduler — not configured here.
 type JobConfig struct {
-	BatchSize            int `env:"JOB_BATCH_SIZE"              envDefault:"10"`
-	MaxPerCombination    int `env:"JOB_MAX_PER_COMBINATION"     envDefault:"100"`
-	SeedIterations       int `env:"JOB_SEED_ITERATIONS"         envDefault:"10"`
-	CombinationDelayS    int `env:"JOB_COMBINATION_DELAY_S"     envDefault:"4"`
+	BatchSize         int `env:"JOB_BATCH_SIZE"              envDefault:"10"`
+	MaxPerCombination int `env:"JOB_MAX_PER_COMBINATION"     envDefault:"100"`
+	SeedIterations    int `env:"JOB_SEED_ITERATIONS"         envDefault:"10"`
+	CombinationDelayS int `env:"JOB_COMBINATION_DELAY_S"     envDefault:"4"`
 
 	CombinationDelay time.Duration // derived: CombinationDelayS * time.Second
 }
@@ -84,7 +84,7 @@ type NotifyConfig struct {
 	SMTPUser       string `env:"NOTIFY_SMTP_USER"`
 	SMTPPass       string `env:"NOTIFY_SMTP_PASSWORD"`
 	SMTPFrom       string `env:"NOTIFY_SMTP_FROM"`
-	SMTPTo         string `env:"NOTIFY_SMTP_TO"`              // comma-separated
+	SMTPTo         string `env:"NOTIFY_SMTP_TO"`                              // comma-separated
 	SMTPDailyLimit int    `env:"NOTIFY_SMTP_DAILY_LIMIT"     envDefault:"50"` // 0 = unlimited
 }
 

@@ -55,7 +55,7 @@ type Config struct {
 	SeedIterations    int
 	// CombinationDelay is the pause inserted between consecutive LLM calls
 	// to stay within the provider's rate limit. Default: 4 s (≤ 15 RPM).
-	CombinationDelay  time.Duration
+	CombinationDelay time.Duration
 }
 
 // topicPickerI abstracts the TopicPicker for injection.

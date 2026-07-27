@@ -30,7 +30,7 @@ func NewWebhookNotifier(url string) notify.NotificationService {
 		return nil
 	}
 	return &WebhookNotifier{
-		url: url,
+		url:        url,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }

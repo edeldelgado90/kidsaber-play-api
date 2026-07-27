@@ -37,9 +37,9 @@ type mockQRepo struct {
 func (m *mockQRepo) FindRandom(ctx context.Context, params questions.FindParams, count int) ([]domain.Question, error) {
 	return m.findFn(ctx, params, count)
 }
-func (m *mockQRepo) Save(_ context.Context, _ []domain.Question) error               { return nil }
-func (m *mockQRepo) InsertBatch(_ context.Context, _ []domain.Question) error        { return nil }
-func (m *mockQRepo) Count(_ context.Context, _ questions.FindParams) (int, error)    { return 0, nil }
+func (m *mockQRepo) Save(_ context.Context, _ []domain.Question) error            { return nil }
+func (m *mockQRepo) InsertBatch(_ context.Context, _ []domain.Question) error     { return nil }
+func (m *mockQRepo) Count(_ context.Context, _ questions.FindParams) (int, error) { return 0, nil }
 func (m *mockQRepo) DeleteMostUsed(_ context.Context, _ questions.FindParams, _ int) error {
 	return nil
 }
@@ -47,9 +47,9 @@ func (m *mockQRepo) IncrementUsageCount(_ context.Context, _ []string) error { r
 
 type noopJobRepo struct{}
 
-func (n *noopJobRepo) Insert(_ context.Context, _ *domain.JobRun) error              { return nil }
-func (n *noopJobRepo) Update(_ context.Context, _ *domain.JobRun) error              { return nil }
-func (n *noopJobRepo) FindRecent(_ context.Context, _ int) ([]domain.JobRun, error)  { return nil, nil }
+func (n *noopJobRepo) Insert(_ context.Context, _ *domain.JobRun) error             { return nil }
+func (n *noopJobRepo) Update(_ context.Context, _ *domain.JobRun) error             { return nil }
+func (n *noopJobRepo) FindRecent(_ context.Context, _ int) ([]domain.JobRun, error) { return nil, nil }
 
 type noopNotifier struct{}
 
@@ -361,8 +361,8 @@ func TestAdminJobsEndpoint_500_OnRepoError(t *testing.T) {
 // errJobRepo is a job repo that always errors on FindRecent.
 type errJobRepo struct{}
 
-func (e *errJobRepo) Insert(_ context.Context, _ *domain.JobRun) error             { return nil }
-func (e *errJobRepo) Update(_ context.Context, _ *domain.JobRun) error             { return nil }
+func (e *errJobRepo) Insert(_ context.Context, _ *domain.JobRun) error { return nil }
+func (e *errJobRepo) Update(_ context.Context, _ *domain.JobRun) error { return nil }
 func (e *errJobRepo) FindRecent(_ context.Context, _ int) ([]domain.JobRun, error) {
 	return nil, errors.New("db error")
 }
