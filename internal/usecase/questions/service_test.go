@@ -27,12 +27,12 @@ func (m *mockGenerator) Generate(ctx context.Context, params questions.GenerateP
 }
 
 type mockRepo struct {
-	findRandomFunc        func(ctx context.Context, params questions.FindParams, count int) ([]domain.Question, error)
-	saveFunc              func(ctx context.Context, qs []domain.Question) error
-	insertBatchFunc       func(ctx context.Context, qs []domain.Question) error
-	countFunc             func(ctx context.Context, params questions.FindParams) (int, error)
-	deleteMostUsedFunc    func(ctx context.Context, params questions.FindParams, limit int) error
-	incrementUsageFunc    func(ctx context.Context, ids []string) error
+	findRandomFunc     func(ctx context.Context, params questions.FindParams, count int) ([]domain.Question, error)
+	saveFunc           func(ctx context.Context, qs []domain.Question) error
+	insertBatchFunc    func(ctx context.Context, qs []domain.Question) error
+	countFunc          func(ctx context.Context, params questions.FindParams) (int, error)
+	deleteMostUsedFunc func(ctx context.Context, params questions.FindParams, limit int) error
+	incrementUsageFunc func(ctx context.Context, ids []string) error
 }
 
 func (m *mockRepo) FindRandom(ctx context.Context, params questions.FindParams, count int) ([]domain.Question, error) {

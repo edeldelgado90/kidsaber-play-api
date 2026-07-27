@@ -14,9 +14,9 @@ import (
 
 // gradeRange defines the operand ranges and allowed operations for each grade band.
 type gradeRange struct {
-	minVal   int
-	maxVal   int
-	ops      []string // "+", "-", "*", "/"
+	minVal int
+	maxVal int
+	ops    []string // "+", "-", "*", "/"
 }
 
 // rangeConfig returns the appropriate number range and operations for a grade.

@@ -23,6 +23,9 @@ type RouterConfig struct {
 	// AppCheck validates Firebase App Check tokens from mobile/web clients
 	// (X-Firebase-AppCheck header). Pass nil to accept only the static API key.
 	AppCheck AppCheckValidator
+	// IDToken validates Firebase Auth ID tokens sent by app clients as a bearer
+	// token. Pass nil to reject them. Never wired into admin routes.
+	IDToken IDTokenVerifier
 }
 
 const (
@@ -50,15 +53,24 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	// Public routes — no auth required
 	r.Get("/health", HealthHandler)
 
-	// Protected routes — accepts static API key OR Firebase App Check token
+	// Protected routes — static API key OR Firebase ID token OR App Check token
 	r.Group(func(r chi.Router) {
-		r.Use(AuthMiddleware(cfg.AuthEnabled, cfg.APIKey, cfg.AppCheck))
+		r.Use(AuthMiddleware(AuthConfig{
+			Enabled:  cfg.AuthEnabled,
+			APIKey:   cfg.APIKey,
+			AppCheck: cfg.AppCheck,
+			IDToken:  cfg.IDToken,
+		}))
 		r.Get("/questions", cfg.QuestionsHandler.GetQuestions)
 	})
 
-	// Admin routes — static API key only (App Check not accepted)
+	// Admin routes — static API key only. App Check and ID tokens are deliberately
+	// left nil: anyone can obtain an anonymous ID token, so neither may pass here.
 	r.Group(func(r chi.Router) {
-		r.Use(AuthMiddleware(cfg.APIKey != "", cfg.APIKey, nil))
+		r.Use(AuthMiddleware(AuthConfig{
+			Enabled: cfg.APIKey != "",
+			APIKey:  cfg.APIKey,
+		}))
 		r.Get("/admin/jobs", cfg.AdminHandler.GetJobRuns)
 	})
 

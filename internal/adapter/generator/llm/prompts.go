@@ -28,10 +28,10 @@ type RetryPromptData struct {
 
 // Templates are parsed once at startup.
 var (
-	templateOnce      sync.Once
-	promptTemplates   map[domain.GameType]*template.Template
-	retryTemplate     *template.Template
-	templateParseErr  error
+	templateOnce     sync.Once
+	promptTemplates  map[domain.GameType]*template.Template
+	retryTemplate    *template.Template
+	templateParseErr error
 )
 
 // Raw prompt templates as backtick string literals — binary stays self-contained.
