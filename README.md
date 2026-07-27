@@ -22,6 +22,25 @@ cmd/server → adapter/http → usecase → domain ← adapter/generator + adapt
 | `GET` | `/questions` | Get a question batch |
 | `GET` | `/admin/jobs` | Job run history (API key required) |
 
+### Authentication
+
+With `AUTH_ENABLED=true`, `/questions` accepts any **one** of:
+
+| Credential | Header | Used by |
+|-----------|--------|---------|
+| Static API key | `X-API-Key: <key>` or `Authorization: Bearer <key>` | Server-to-server, admin tooling |
+| Firebase ID token | `Authorization: Bearer <idToken>` | Web and mobile clients (anonymous sign-in) |
+| Firebase App Check | `X-Firebase-AppCheck: <token>` | Attested app builds |
+
+The last two require `FIREBASE_PROJECT_ID`. When it is unset, only the static key
+is accepted.
+
+`/admin/*` accepts the **static API key only** — anyone can mint an anonymous ID
+token, so neither ID tokens nor App Check tokens reach the admin surface.
+
+Browser clients must have their origin listed in `CORS_ALLOWED_ORIGINS`, which
+supports `https://*.example.com` subdomain wildcards for preview deployments.
+
 ### GET /questions
 
 ```

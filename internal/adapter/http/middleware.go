@@ -121,36 +121,78 @@ type AppCheckValidator interface {
 	VerifyToken(token string) error
 }
 
+// IDTokenVerifier validates Firebase Authentication ID tokens. Clients obtain
+// one by signing in (anonymously, in this app) and send it as a bearer token.
+type IDTokenVerifier interface {
+	VerifyIDToken(ctx context.Context, token string) error
+}
+
+// AuthConfig selects which credentials AuthMiddleware accepts.
+//
+// A nil validator disables that credential type, which is how admin routes
+// stay API-key-only: any anonymous client can mint an ID token, so ID tokens
+// must never unlock admin endpoints.
+type AuthConfig struct {
+	// Enabled turns authentication on. When false, every request passes.
+	Enabled bool
+	// APIKey is the static server-to-server key. Empty disables key auth.
+	APIKey string
+	// AppCheck validates X-Firebase-AppCheck tokens. Nil disables the check.
+	AppCheck AppCheckValidator
+	// IDToken validates Firebase ID tokens sent as a bearer token. Nil disables it.
+	IDToken IDTokenVerifier
+}
+
 // AuthMiddleware validates credentials on protected routes.
 //
-// Accepted credentials (when enabled=true):
-//  1. Static API key — Authorization: Bearer <key> or X-API-Key header;
-//     constant-time compared; for server-to-server calls and admin tooling.
-//  2. Firebase App Check token — X-Firebase-AppCheck header; issued by Google
-//     for genuine app instances (iOS/Android/Web). Pass nil to disable.
+// Accepted credentials, in order (when Enabled):
+//  1. Static API key — X-API-Key or Authorization: Bearer <key>; constant-time
+//     compared; for server-to-server calls and admin tooling.
+//  2. Firebase ID token — Authorization: Bearer <token>; issued by Firebase Auth
+//     to a signed-in (anonymous) client.
+//  3. Firebase App Check token — X-Firebase-AppCheck header; attests a genuine
+//     app instance.
 //
-// Uses constant-time comparison for the static key to prevent timing attacks.
+// The bearer slot is shared by the API key and the ID token: the key is tried
+// first with a constant-time compare, and only on a mismatch is the value
+// verified as an ID token. This keeps the existing server-to-server contract
+// working while letting app clients present their own credential.
+//
 // Returns 401 with a generic message — never reveals which check failed.
-func AuthMiddleware(enabled bool, apiKey string, appCheck AppCheckValidator) func(http.Handler) http.Handler {
+func AuthMiddleware(cfg AuthConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !enabled {
+			if !cfg.Enabled {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// 1. Accept static API key (constant-time comparison).
-			if key := extractAPIKey(r); key != "" && apiKey != "" {
-				if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) == 1 {
+			bearer := extractBearerToken(r)
+
+			// 1. Static API key (constant-time comparison).
+			if cfg.APIKey != "" {
+				key := r.Header.Get("X-API-Key")
+				if key == "" {
+					key = bearer
+				}
+				if key != "" && subtle.ConstantTimeCompare([]byte(key), []byte(cfg.APIKey)) == 1 {
 					next.ServeHTTP(w, r)
 					return
 				}
 			}
 
-			// 2. Accept a valid Firebase App Check token.
-			if appCheck != nil {
+			// 2. Firebase ID token presented as a bearer token.
+			if cfg.IDToken != nil && bearer != "" {
+				if cfg.IDToken.VerifyIDToken(r.Context(), bearer) == nil {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// 3. Firebase App Check token.
+			if cfg.AppCheck != nil {
 				if tok := r.Header.Get("X-Firebase-AppCheck"); tok != "" {
-					if appCheck.VerifyToken(tok) == nil {
+					if cfg.AppCheck.VerifyToken(tok) == nil {
 						next.ServeHTTP(w, r)
 						return
 					}
@@ -162,14 +204,14 @@ func AuthMiddleware(enabled bool, apiKey string, appCheck AppCheckValidator) fun
 	}
 }
 
-// extractAPIKey reads the API key from Authorization: Bearer <key> or X-API-Key header.
-func extractAPIKey(r *http.Request) string {
+// extractBearerToken reads the token from an Authorization: Bearer <token> header.
+func extractBearerToken(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
-		if strings.HasPrefix(auth, "Bearer ") {
-			return strings.TrimPrefix(auth, "Bearer ")
+		if tok, ok := strings.CutPrefix(auth, "Bearer "); ok {
+			return tok
 		}
 	}
-	return r.Header.Get("X-API-Key")
+	return ""
 }
 
 // ── Rate Limiter ──────────────────────────────────────────────────────────────

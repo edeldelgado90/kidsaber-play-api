@@ -18,6 +18,7 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/internal/config"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
 	"github.com/kidsaber/kidsaber-play-api/pkg/appcheck"
+	"github.com/kidsaber/kidsaber-play-api/pkg/idtoken"
 	"github.com/kidsaber/kidsaber-play-api/pkg/logger"
 	"github.com/kidsaber/kidsaber-play-api/pkg/validator"
 )
@@ -87,26 +88,40 @@ func run() error {
 	questionsHandler := httpAdapter.NewQuestionsHandler(uc, log)
 	adminHandler := httpAdapter.NewAdminHandler(repo, log)
 
-	// ── Firebase App Check ─────────────────────────────────────────────────────
-	// When FIREBASE_PROJECT_ID is set, mobile/web clients can authenticate using
-	// a Firebase App Check token (X-Firebase-AppCheck header) instead of the
-	// static API key. On Cloud Run, ADC are available automatically.
-	var appCheckValidator httpAdapter.AppCheckValidator
+	// ── Firebase credentials ───────────────────────────────────────────────────
+	// When FIREBASE_PROJECT_ID is set, app clients can authenticate without the
+	// static API key, either with a Firebase Auth ID token (Authorization:
+	// Bearer, what the web and mobile clients send after anonymous sign-in) or
+	// with an App Check token (X-Firebase-AppCheck). On Cloud Run, ADC are
+	// available automatically.
+	var (
+		appCheckValidator httpAdapter.AppCheckValidator
+		idTokenVerifier   httpAdapter.IDTokenVerifier
+	)
 	if cfg.Auth.FirebaseProjectID != "" {
 		v, err := appcheck.NewValidator(ctx, cfg.Auth.FirebaseProjectID)
 		if err != nil {
 			return fmt.Errorf("initialising firebase app check: %w", err)
 		}
 		appCheckValidator = v
-		log.Info("firebase app check enabled", "project", cfg.Auth.FirebaseProjectID)
+
+		iv, err := idtoken.NewVerifier(ctx, cfg.Auth.FirebaseProjectID)
+		if err != nil {
+			return fmt.Errorf("initialising firebase id token verifier: %w", err)
+		}
+		idTokenVerifier = iv
+
+		log.Info("firebase auth enabled", "project", cfg.Auth.FirebaseProjectID,
+			"credentials", "id_token+app_check")
 	} else {
-		log.Info("firebase app check disabled — API key only (FIREBASE_PROJECT_ID not set)")
+		log.Info("firebase auth disabled — API key only (FIREBASE_PROJECT_ID not set)")
 	}
 
 	router := httpAdapter.NewRouter(httpAdapter.RouterConfig{
 		QuestionsHandler: questionsHandler,
 		AdminHandler:     adminHandler,
 		AppCheck:         appCheckValidator,
+		IDToken:          idTokenVerifier,
 		Logger:           log,
 		AuthEnabled:      cfg.Auth.Enabled,
 		APIKey:           cfg.Auth.APIKey,

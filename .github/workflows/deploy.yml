@@ -137,8 +137,13 @@ jobs:
 # LLM_MODEL                    — e.g. gemini-2.0-flash-lite
 # LLM_BASE_URL                 — e.g. https://generativelanguage.googleapis.com/v1beta/openai/
 # NOTIFY_WEBHOOK_URL           — Slack/Discord webhook URL
-# API_KEY                      — strong random key sent by the mobile app
-# CORS_ALLOWED_ORIGINS         — comma-separated list of allowed origins
+# API_KEY                      — strong random key for server-to-server and /admin/*
+#                                (app clients authenticate with Firebase ID tokens instead)
+# CORS_ALLOWED_ORIGINS         — comma-separated browser origins of the web front-end.
+#                                Supports https://*.example.com subdomain wildcards.
+#                                Cloudflare Pages needs both the production URL and the
+#                                preview wildcard, e.g.
+#                                https://kidsaber-play.pages.dev,https://*.kidsaber-play.pages.dev
 #
 # ── One-time GCP setup (run once before first deploy) ────────────────────────
 # 1. Artifact Registry

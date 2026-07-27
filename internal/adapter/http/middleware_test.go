@@ -1,7 +1,9 @@
 package http_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -227,7 +229,34 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 // ─── AuthMiddleware ───────────────────────────────────────────────────────────
 
 func authMiddlewareWrapped(enabled bool, key string, appCheck httpAdapter.AppCheckValidator) http.Handler {
-	return httpAdapter.AuthMiddleware(enabled, key, appCheck)(okHandler())
+	return httpAdapter.AuthMiddleware(httpAdapter.AuthConfig{
+		Enabled:  enabled,
+		APIKey:   key,
+		AppCheck: appCheck,
+	})(okHandler())
+}
+
+// mockIDToken accepts exactly one ID token and records the tokens it was asked
+// to verify, so tests can assert what reached the verifier.
+type mockIDToken struct {
+	validToken string
+	seen       []string
+}
+
+func (m *mockIDToken) VerifyIDToken(_ context.Context, token string) error {
+	m.seen = append(m.seen, token)
+	if token == m.validToken {
+		return nil
+	}
+	return errors.New("invalid id token")
+}
+
+func authWithIDToken(key string, idToken httpAdapter.IDTokenVerifier) http.Handler {
+	return httpAdapter.AuthMiddleware(httpAdapter.AuthConfig{
+		Enabled: true,
+		APIKey:  key,
+		IDToken: idToken,
+	})(okHandler())
 }
 
 func TestAuthMiddleware_Disabled(t *testing.T) {
@@ -301,6 +330,113 @@ func TestAuthMiddleware_NilAppCheckNoAPIKey(t *testing.T) {
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// ─── AuthMiddleware: Firebase ID tokens ───────────────────────────────────────
+
+func TestAuthMiddleware_ValidIDToken(t *testing.T) {
+	wrapped := authWithIDToken("static-key", &mockIDToken{validToken: "good-id-token"})
+
+	req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+	req.Header.Set("Authorization", "Bearer good-id-token")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestAuthMiddleware_InvalidIDToken(t *testing.T) {
+	wrapped := authWithIDToken("static-key", &mockIDToken{validToken: "good-id-token"})
+
+	req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+	req.Header.Set("Authorization", "Bearer forged-token")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestAuthMiddleware_IDTokenNotAcceptedWhenVerifierNil(t *testing.T) {
+	wrapped := authWithIDToken("static-key", nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+	req.Header.Set("Authorization", "Bearer some-id-token")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestAuthMiddleware_StaticKeyStillWinsBearerSlot(t *testing.T) {
+	verifier := &mockIDToken{validToken: "good-id-token"}
+	wrapped := authWithIDToken("static-key", verifier)
+
+	// Server-to-server callers keep sending the API key as a bearer token; it
+	// must be accepted without ever reaching the ID token verifier.
+	req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+	req.Header.Set("Authorization", "Bearer static-key")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, verifier.seen, "API key must short-circuit before ID token verification")
+}
+
+func TestAuthMiddleware_IDTokenWorksWithoutStaticKey(t *testing.T) {
+	wrapped := authWithIDToken("", &mockIDToken{validToken: "good-id-token"})
+
+	req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+	req.Header.Set("Authorization", "Bearer good-id-token")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestAuthMiddleware_MalformedAuthorizationHeader(t *testing.T) {
+	verifier := &mockIDToken{validToken: "good-id-token"}
+	wrapped := authWithIDToken("static-key", verifier)
+
+	for _, header := range []string{"good-id-token", "Basic good-id-token", "Bearer", "bearer good-id-token"} {
+		req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+		req.Header.Set("Authorization", header)
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusUnauthorized, rec.Code, "Authorization: %q", header)
+	}
+	assert.Empty(t, verifier.seen, "no malformed header should reach the verifier")
+}
+
+func TestAuthMiddleware_AllThreeCredentialsCoexist(t *testing.T) {
+	wrapped := httpAdapter.AuthMiddleware(httpAdapter.AuthConfig{
+		Enabled:  true,
+		APIKey:   "static-key",
+		AppCheck: &mockAppCheck{validToken: "good-appcheck"},
+		IDToken:  &mockIDToken{validToken: "good-id-token"},
+	})(okHandler())
+
+	tests := []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{"static key via X-API-Key", "X-API-Key", "static-key"},
+		{"static key via bearer", "Authorization", "Bearer static-key"},
+		{"firebase id token", "Authorization", "Bearer good-id-token"},
+		{"app check token", "X-Firebase-AppCheck", "good-appcheck"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/questions", nil)
+			req.Header.Set(tc.header, tc.value)
+			rec := httptest.NewRecorder()
+			wrapped.ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusOK, rec.Code)
+		})
+	}
 }
 
 // ─── RateLimitMiddleware ──────────────────────────────────────────────────────
