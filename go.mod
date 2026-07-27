@@ -1,6 +1,6 @@
 module github.com/kidsaber/kidsaber-play-api
 
-go 1.26.3
+go 1.26.5
 
 require (
 	firebase.google.com/go/v4 v4.20.0
