@@ -85,10 +85,9 @@ jobs:
           flags: "--allow-unauthenticated"
           env_vars: |
             DATABASE_URL=${{ secrets.DATABASE_URL }}
-            LLM_PROVIDER=${{ secrets.LLM_PROVIDER }}
             LLM_API_KEY=${{ secrets.LLM_API_KEY }}
             LLM_MODEL=${{ secrets.LLM_MODEL }}
-            LLM_BASE_URL=${{ secrets.LLM_BASE_URL }}
+            LLM_EFFORT=${{ secrets.LLM_EFFORT }}
             NOTIFY_WEBHOOK_URL=${{ secrets.NOTIFY_WEBHOOK_URL }}
             API_KEY=${{ secrets.API_KEY }}
             AUTH_ENABLED=true
@@ -106,10 +105,10 @@ jobs:
             --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
             --set-env-vars="APP_ENV=production,\
           DATABASE_URL=${{ secrets.DATABASE_URL }},\
-          LLM_PROVIDER=${{ secrets.LLM_PROVIDER }},\
           LLM_API_KEY=${{ secrets.LLM_API_KEY }},\
           LLM_MODEL=${{ secrets.LLM_MODEL }},\
-          LLM_BASE_URL=${{ secrets.LLM_BASE_URL }},\
+          LLM_EFFORT=${{ secrets.LLM_EFFORT }},\
+          LLM_TIMEOUT_S=300,\
           NOTIFY_WEBHOOK_URL=${{ secrets.NOTIFY_WEBHOOK_URL }},\
           JOB_BATCH_SIZE=10,\
           JOB_MAX_PER_COMBINATION=100,\
@@ -143,10 +142,9 @@ jobs:
 # GCP_WORKLOAD_IDENTITY_PROVIDER — keyless auth provider
 # GCP_SERVICE_ACCOUNT          — service account email (deploy + Cloud Scheduler invoker)
 # DATABASE_URL                 — Neon PostgreSQL (postgres://...?sslmode=require)
-# LLM_PROVIDER                 — gemini | groq | ollama
-# LLM_API_KEY                  — LLM provider API key
-# LLM_MODEL                    — e.g. gemini-2.0-flash-lite
-# LLM_BASE_URL                 — e.g. https://generativelanguage.googleapis.com/v1beta/openai/
+# LLM_API_KEY                  — Claude API key (console.anthropic.com)
+# LLM_MODEL                    — claude-opus-5 (or claude-sonnet-5 to cut cost)
+# LLM_EFFORT                   — low | medium | high | xhigh | max (default high)
 # NOTIFY_WEBHOOK_URL           — Slack/Discord webhook URL
 # API_KEY                      — strong random key for server-to-server and /admin/*
 #                                (app clients authenticate with Firebase ID tokens instead)

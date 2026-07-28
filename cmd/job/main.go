@@ -58,6 +58,7 @@ func run() error {
 		cfg.LLM.BaseURL,
 		cfg.LLM.APIKey,
 		cfg.LLM.Model,
+		cfg.LLM.Effort,
 		cfg.LLM.Timeout,
 	)
 	topicPicker := llm.NewTopicPicker()
