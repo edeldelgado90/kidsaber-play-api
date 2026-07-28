@@ -9,6 +9,7 @@ import (
 
 	"github.com/kidsaber/kidsaber-play-api/internal/domain"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
+	"github.com/kidsaber/kidsaber-play-api/internal/version"
 )
 
 // QuestionsHandler handles GET /questions.
@@ -137,8 +138,13 @@ func (h *AdminHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 // HealthHandler handles GET /health.
+// The version field carries the commit the binary was built from, so the
+// deployed revision can be identified without access to the Cloud Run console.
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"version": version.Version,
+	})
 }
 
 // writeJSON encodes v as JSON and writes it with the given status code.

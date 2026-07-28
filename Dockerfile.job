@@ -7,10 +7,14 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Commit SHA of the build, stamped into the binary so the running image can be
+# traced back to its source. Defaults to "dev" for local builds.
+ARG VERSION=dev
+
 # Build the job binary
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X github.com/kidsaber/kidsaber-play-api/internal/version.Version=${VERSION}" \
     -o /app/job \
     ./cmd/job
 

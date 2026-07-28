@@ -16,6 +16,7 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/internal/adapter/repository/postgres"
 	"github.com/kidsaber/kidsaber-play-api/internal/config"
 	"github.com/kidsaber/kidsaber-play-api/internal/job"
+	"github.com/kidsaber/kidsaber-play-api/internal/version"
 	"github.com/kidsaber/kidsaber-play-api/pkg/logger"
 	"github.com/kidsaber/kidsaber-play-api/pkg/validator"
 )
@@ -36,7 +37,7 @@ func run() error {
 	appEnv := os.Getenv("APP_ENV")
 	log := logger.New(appEnv, cfg.Log.Level)
 	slog.SetDefault(log)
-	log.Info("starting question generator job")
+	log.Info("starting question generator job", "version", version.Version)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 	defer cancel()

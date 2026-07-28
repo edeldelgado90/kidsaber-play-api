@@ -50,27 +50,38 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Images carry the commit SHA as their primary tag so a deployed revision
+      # can always be traced back to its source. `latest` is kept as a moving
+      # convenience pointer, but deploys reference the immutable SHA tag.
       - name: Build and push API server image
         run: |
+          REPO=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api
           docker build \
-            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest \
+            --build-arg VERSION=${{ github.sha }} \
+            --tag "$REPO:${{ github.sha }}" \
+            --tag "$REPO:latest" \
             .
-          docker push europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest
+          docker push "$REPO:${{ github.sha }}"
+          docker push "$REPO:latest"
 
       - name: Build and push job image
         run: |
+          REPO=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job
           docker build \
             --file Dockerfile.job \
-            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest \
+            --build-arg VERSION=${{ github.sha }} \
+            --tag "$REPO:${{ github.sha }}" \
+            --tag "$REPO:latest" \
             .
-          docker push europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest
+          docker push "$REPO:${{ github.sha }}"
+          docker push "$REPO:latest"
 
       - name: Deploy API server to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: kidsaber-api
           region: europe-west1
-          image: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api
+          image: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:${{ github.sha }}
           flags: "--allow-unauthenticated"
           env_vars: |
             DATABASE_URL=${{ secrets.DATABASE_URL }}
@@ -88,7 +99,7 @@ jobs:
       - name: Deploy question generator Cloud Run Job
         run: |
           gcloud run jobs deploy kidsaber-job \
-            --image=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest \
+            --image=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:${{ github.sha }} \
             --region=europe-west1 \
             --task-timeout=3h \
             --max-retries=1 \
