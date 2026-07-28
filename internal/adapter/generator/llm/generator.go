@@ -13,7 +13,7 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/pkg/validator"
 )
 
-// LLMGenerator implements questions.QuestionGenerator using an OpenAI-compatible LLM API.
+// LLMGenerator implements questions.QuestionGenerator on top of the Claude API.
 // It handles prompt building, retries on schema validation failure, and topic selection.
 type LLMGenerator struct {
 	client      *LLMClient

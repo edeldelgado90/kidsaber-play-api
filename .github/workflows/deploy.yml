@@ -50,34 +50,44 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Images carry the commit SHA as their primary tag so a deployed revision
+      # can always be traced back to its source. `latest` is kept as a moving
+      # convenience pointer, but deploys reference the immutable SHA tag.
       - name: Build and push API server image
         run: |
+          REPO=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api
           docker build \
-            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest \
+            --build-arg VERSION=${{ github.sha }} \
+            --tag "$REPO:${{ github.sha }}" \
+            --tag "$REPO:latest" \
             .
-          docker push europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:latest
+          docker push "$REPO:${{ github.sha }}"
+          docker push "$REPO:latest"
 
       - name: Build and push job image
         run: |
+          REPO=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job
           docker build \
             --file Dockerfile.job \
-            --tag europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest \
+            --build-arg VERSION=${{ github.sha }} \
+            --tag "$REPO:${{ github.sha }}" \
+            --tag "$REPO:latest" \
             .
-          docker push europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest
+          docker push "$REPO:${{ github.sha }}"
+          docker push "$REPO:latest"
 
       - name: Deploy API server to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: kidsaber-api
           region: europe-west1
-          image: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api
+          image: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-api:${{ github.sha }}
           flags: "--allow-unauthenticated"
           env_vars: |
             DATABASE_URL=${{ secrets.DATABASE_URL }}
-            LLM_PROVIDER=${{ secrets.LLM_PROVIDER }}
             LLM_API_KEY=${{ secrets.LLM_API_KEY }}
             LLM_MODEL=${{ secrets.LLM_MODEL }}
-            LLM_BASE_URL=${{ secrets.LLM_BASE_URL }}
+            LLM_EFFORT=${{ secrets.LLM_EFFORT }}
             NOTIFY_WEBHOOK_URL=${{ secrets.NOTIFY_WEBHOOK_URL }}
             API_KEY=${{ secrets.API_KEY }}
             AUTH_ENABLED=true
@@ -88,17 +98,17 @@ jobs:
       - name: Deploy question generator Cloud Run Job
         run: |
           gcloud run jobs deploy kidsaber-job \
-            --image=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:latest \
+            --image=europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kidsaber/kidsaber-job:${{ github.sha }} \
             --region=europe-west1 \
             --task-timeout=3h \
             --max-retries=1 \
             --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
             --set-env-vars="APP_ENV=production,\
           DATABASE_URL=${{ secrets.DATABASE_URL }},\
-          LLM_PROVIDER=${{ secrets.LLM_PROVIDER }},\
           LLM_API_KEY=${{ secrets.LLM_API_KEY }},\
           LLM_MODEL=${{ secrets.LLM_MODEL }},\
-          LLM_BASE_URL=${{ secrets.LLM_BASE_URL }},\
+          LLM_EFFORT=${{ secrets.LLM_EFFORT }},\
+          LLM_TIMEOUT_S=300,\
           NOTIFY_WEBHOOK_URL=${{ secrets.NOTIFY_WEBHOOK_URL }},\
           JOB_BATCH_SIZE=10,\
           JOB_MAX_PER_COMBINATION=100,\
@@ -132,10 +142,9 @@ jobs:
 # GCP_WORKLOAD_IDENTITY_PROVIDER — keyless auth provider
 # GCP_SERVICE_ACCOUNT          — service account email (deploy + Cloud Scheduler invoker)
 # DATABASE_URL                 — Neon PostgreSQL (postgres://...?sslmode=require)
-# LLM_PROVIDER                 — gemini | groq | ollama
-# LLM_API_KEY                  — LLM provider API key
-# LLM_MODEL                    — e.g. gemini-2.0-flash-lite
-# LLM_BASE_URL                 — e.g. https://generativelanguage.googleapis.com/v1beta/openai/
+# LLM_API_KEY                  — Claude API key (console.anthropic.com)
+# LLM_MODEL                    — claude-sonnet-5 (or claude-opus-5 for more quality)
+# LLM_EFFORT                   — low | medium | high | xhigh | max (default medium)
 # NOTIFY_WEBHOOK_URL           — Slack/Discord webhook URL
 # API_KEY                      — strong random key for server-to-server and /admin/*
 #                                (app clients authenticate with Firebase ID tokens instead)

@@ -2,7 +2,6 @@ package llm_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -89,20 +88,10 @@ var defaultParams = questions.GenerateParams{
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-// openAIResp wraps content in the OpenAI-compatible chat completions response envelope.
-func openAIResp(content string) []byte {
-	type msg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	type choice struct {
-		Message msg `json:"message"`
-	}
-	type resp struct {
-		Choices []choice `json:"choices"`
-	}
-	b, _ := json.Marshal(resp{Choices: []choice{{Message: msg{Role: "assistant", Content: content}}}})
-	return b
+// claudeResp streams content back as a Claude assistant turn. The shared
+// writeClaudeStream helper lives in client_test.go.
+func claudeResp(w http.ResponseWriter, content string) {
+	writeClaudeStream(w, content, "end_turn", "")
 }
 
 func testLogger() *slog.Logger {
@@ -115,7 +104,7 @@ func newGenerator(t *testing.T, handler http.HandlerFunc, maxRetries int, retryD
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	client := llm.NewLLMClient(srv.URL+"/", "", "test-model", 5*time.Second)
+	client := llm.NewLLMClient(srv.URL, "test-key", "claude-opus-5", "high", 5*time.Second)
 	v, err := validator.NewQuestionValidator()
 	require.NoError(t, err)
 	picker := llm.NewTopicPicker()
@@ -126,8 +115,7 @@ func newGenerator(t *testing.T, handler http.HandlerFunc, maxRetries int, retryD
 
 func TestLLMGenerator_Generate_SuccessOnFirstAttempt(t *testing.T) {
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(openAIResp(validOptionMultipleJSON))
+		claudeResp(w, validOptionMultipleJSON)
 	}
 	gen := newGenerator(t, handler, 2, time.Millisecond)
 
@@ -140,8 +128,7 @@ func TestLLMGenerator_Generate_SuccessOnFirstAttempt(t *testing.T) {
 func TestLLMGenerator_Generate_StampsServerGeneratedIDs(t *testing.T) {
 	// The LLM JSON has no "id" field — the generator must assign a non-empty UUID.
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(openAIResp(validOptionMultipleJSON))
+		claudeResp(w, validOptionMultipleJSON)
 	}
 	gen := newGenerator(t, handler, 0, time.Millisecond)
 
@@ -159,8 +146,7 @@ func TestLLMGenerator_Generate_OverridesLLMFieldsWithParams(t *testing.T) {
 	// params say SubjectMathematics and grade=3.
 	// Generator must stamp the params values after schema validation.
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(openAIResp(wrongFieldsJSON))
+		claudeResp(w, wrongFieldsJSON)
 	}
 	gen := newGenerator(t, handler, 0, time.Millisecond)
 
@@ -175,8 +161,7 @@ func TestLLMGenerator_Generate_OverridesLLMFieldsWithParams(t *testing.T) {
 
 func TestLLMGenerator_Generate_UniqueIDsPerQuestion(t *testing.T) {
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(openAIResp(twoQuestionsJSON))
+		claudeResp(w, twoQuestionsJSON)
 	}
 	gen := newGenerator(t, handler, 0, time.Millisecond)
 
@@ -200,11 +185,10 @@ func TestLLMGenerator_Generate_UniqueIDsPerQuestion(t *testing.T) {
 func TestLLMGenerator_Generate_RetriesOnParseError(t *testing.T) {
 	var callCount atomic.Int32
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		if callCount.Add(1) == 1 {
-			_, _ = w.Write(openAIResp("not valid json at all"))
+			claudeResp(w, "not valid json at all")
 		} else {
-			_, _ = w.Write(openAIResp(validOptionMultipleJSON))
+			claudeResp(w, validOptionMultipleJSON)
 		}
 	}
 	gen := newGenerator(t, handler, 2, time.Millisecond)
@@ -219,12 +203,11 @@ func TestLLMGenerator_Generate_RetriesOnParseError(t *testing.T) {
 func TestLLMGenerator_Generate_RetriesOnSchemaValidationError(t *testing.T) {
 	var callCount atomic.Int32
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		if callCount.Add(1) == 1 {
 			// Parses as JSON but fails schema (missing required fields).
-			_, _ = w.Write(openAIResp(invalidSchemaJSON))
+			claudeResp(w, invalidSchemaJSON)
 		} else {
-			_, _ = w.Write(openAIResp(validOptionMultipleJSON))
+			claudeResp(w, validOptionMultipleJSON)
 		}
 	}
 	gen := newGenerator(t, handler, 2, time.Millisecond)
@@ -240,8 +223,7 @@ func TestLLMGenerator_Generate_ExhaustsRetries_ReturnsErrNoValidQuestions(t *tes
 	var callCount atomic.Int32
 	handler := func(w http.ResponseWriter, _ *http.Request) {
 		callCount.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(openAIResp("totally invalid"))
+		claudeResp(w, "totally invalid")
 	}
 	// maxRetries=2: initial attempt + 2 retries = 3 total LLM calls.
 	gen := newGenerator(t, handler, 2, time.Millisecond)
@@ -276,11 +258,10 @@ func TestLLMGenerator_Generate_RetryDelayIsApplied(t *testing.T) {
 
 	var callCount atomic.Int32
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		if callCount.Add(1) == 1 {
-			_, _ = w.Write(openAIResp("invalid json"))
+			claudeResp(w, "invalid json")
 		} else {
-			_, _ = w.Write(openAIResp(validOptionMultipleJSON))
+			claudeResp(w, validOptionMultipleJSON)
 		}
 	}
 	gen := newGenerator(t, handler, 2, retryDelay)
@@ -302,8 +283,7 @@ func TestLLMGenerator_Generate_ContextCancelledDuringRetryDelay(t *testing.T) {
 	var callCount atomic.Int32
 	handler := func(w http.ResponseWriter, _ *http.Request) {
 		callCount.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(openAIResp("invalid json")) // always invalid → triggers retry delay
+		claudeResp(w, "invalid json") // always invalid → triggers retry delay
 	}
 	gen := newGenerator(t, handler, 2, retryDelay)
 

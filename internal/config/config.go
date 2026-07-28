@@ -34,13 +34,25 @@ type ServerConfig struct {
 	Timeout time.Duration // derived: TimeoutS * time.Second
 }
 
-// LLMConfig holds LLM provider settings.
+// LLMConfig holds Claude API settings.
+//
+// BaseURL is empty by default so the SDK targets the official endpoint; it
+// exists to point tests or a proxy elsewhere. The timeout is generous because
+// generation streams with adaptive thinking and runs for minutes, not seconds.
 type LLMConfig struct {
-	Provider    string `env:"LLM_PROVIDER"    envDefault:"gemini"`
-	APIKey      string `env:"LLM_API_KEY"`
-	Model       string `env:"LLM_MODEL"       envDefault:"gemini-2.0-flash-lite"`
-	BaseURL     string `env:"LLM_BASE_URL"    envDefault:"https://generativelanguage.googleapis.com/v1beta/openai/"`
-	TimeoutS    int    `env:"LLM_TIMEOUT_S"      envDefault:"20"`
+	APIKey string `env:"LLM_API_KEY"`
+
+	// Sonnet at medium effort is the cost/quality sweet spot for this workload:
+	// the prompt fully specifies subject, grade, type and topic, and the output
+	// is schema-validated, so the extra headroom of Opus buys little here.
+	// Thinking tokens bill as output, which makes effort the larger cost lever
+	// of the two. Raise to high, or switch to claude-opus-5, if distractor
+	// quality slips.
+	Model  string `env:"LLM_MODEL"  envDefault:"claude-sonnet-5"`
+	Effort string `env:"LLM_EFFORT" envDefault:"medium"`
+
+	BaseURL     string `env:"LLM_BASE_URL"`
+	TimeoutS    int    `env:"LLM_TIMEOUT_S"      envDefault:"300"`
 	MaxRetries  int    `env:"LLM_MAX_RETRIES"    envDefault:"2"`
 	RetryDelayS int    `env:"LLM_RETRY_DELAY_S"  envDefault:"2"`
 

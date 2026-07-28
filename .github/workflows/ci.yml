@@ -62,9 +62,7 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:test@localhost:5432/kidsaber_test?sslmode=disable
           AUTH_ENABLED: "false"
-          LLM_PROVIDER: gemini
-          LLM_MODEL: gemini-2.0-flash-lite
-          LLM_BASE_URL: https://generativelanguage.googleapis.com/v1beta/openai/
+          LLM_MODEL: claude-sonnet-5
           LLM_API_KEY: ""
 
       - name: Build server binary

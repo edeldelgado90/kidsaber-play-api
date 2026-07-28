@@ -11,7 +11,7 @@ cmd/server → adapter/http → usecase → domain ← adapter/generator + adapt
 ```
 
 - **HTTP request path** is always fast: questions come from the PostgreSQL pool, never from real-time LLM calls.
-- **Background job** pre-generates questions via LLM (Gemini Flash / Groq / Ollama) into the pool on a daily cron schedule.
+- **Background job** pre-generates questions with the Claude API into the pool on a daily cron schedule.
 - **`quick_calculation`** is always procedural — zero LLM calls, zero DB reads.
 
 ## Endpoints
@@ -84,7 +84,7 @@ GET /questions?subject=mathematics&grade=3&type=option_multiple&count=10
 
 - Go 1.23+
 - Docker + Docker Compose (for local PostgreSQL)
-- LLM API key: [Gemini](https://aistudio.google.com/apikey) (free, recommended) or [Groq](https://console.groq.com/) (free fallback)
+- Claude API key: [Anthropic Console](https://console.anthropic.com/settings/keys)
 
 ### 2. Setup
 
@@ -131,13 +131,20 @@ curl "http://localhost:8080/questions?subject=mathematics&grade=3&type=quick_cal
 curl "http://localhost:8080/questions?subject=language&grade=4&type=option_multiple&count=10"
 ```
 
-## LLM Providers (all free tier)
+## Question generation (Claude API)
 
-| Provider | `LLM_PROVIDER` | `LLM_MODEL` | `LLM_BASE_URL` | Limits |
-|----------|----------------|-------------|----------------|--------|
-| **Gemini Flash** (recommended) | `gemini` | `gemini-2.0-flash-lite` | `https://generativelanguage.googleapis.com/v1beta/openai/` | 1,500 req/day |
-| **Groq** (fallback) | `groq` | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` | 14,400 req/day |
-| **Ollama** (local dev) | `ollama` | `llama3.2` | `http://localhost:11434/v1` | Unlimited |
+The generator job calls the Claude Messages API with adaptive thinking, streaming
+each batch so long generations don't hit an HTTP timeout. Only the job and the
+seed command call Claude — `GET /questions` always serves from the pool.
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `LLM_API_KEY` | — | Claude API key. Required for the job; the server runs without it. |
+| `LLM_MODEL` | `claude-sonnet-5` | `claude-opus-5` if question quality needs it. |
+| `LLM_EFFORT` | `medium` | `low`/`medium`/`high`/`xhigh`/`max`. Thinking bills as output, so this is the main cost lever. |
+| `LLM_TIMEOUT_S` | `300` | Whole-request budget; generation runs for minutes. |
+| `LLM_MAX_RETRIES` | `2` | Retries on schema-validation failure. |
+| `LLM_BASE_URL` | — | Optional endpoint override (proxy/gateway). |
 
 ## Makefile targets
 
@@ -171,10 +178,9 @@ make tidy         # go mod tidy + verify
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Federation provider |
 | `GCP_SERVICE_ACCOUNT` | Service account email for Cloud Run |
 | `DATABASE_URL` | Neon PostgreSQL URL (`?sslmode=require`) |
-| `LLM_PROVIDER` | `gemini` |
-| `LLM_API_KEY` | Gemini API key |
-| `LLM_MODEL` | `gemini-2.0-flash-lite` |
-| `LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `LLM_API_KEY` | Claude API key |
+| `LLM_MODEL` | `claude-sonnet-5` |
+| `LLM_EFFORT` | `medium` |
 | `NOTIFY_WEBHOOK_URL` | Slack/Discord webhook for job alerts |
 | `API_KEY` | Strong random key for the mobile app |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins; supports `https://*.example.com` subdomain wildcards |

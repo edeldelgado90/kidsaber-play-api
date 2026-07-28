@@ -1,6 +1,7 @@
 # Binaries (root-level compiled outputs only)
 /server
 /seed
+/audit
 *.exe
 *.out
 
@@ -24,3 +25,6 @@ Thumbs.db
 
 # Go
 vendor/
+
+# Database backups
+/backup-*.sql
