@@ -62,7 +62,7 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:test@localhost:5432/kidsaber_test?sslmode=disable
           AUTH_ENABLED: "false"
-          LLM_MODEL: claude-opus-5
+          LLM_MODEL: claude-sonnet-5
           LLM_API_KEY: ""
 
       - name: Build server binary

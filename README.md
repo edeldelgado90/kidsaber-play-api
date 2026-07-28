@@ -140,8 +140,8 @@ seed command call Claude — `GET /questions` always serves from the pool.
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `LLM_API_KEY` | — | Claude API key. Required for the job; the server runs without it. |
-| `LLM_MODEL` | `claude-opus-5` | `claude-sonnet-5` is the cheaper option. |
-| `LLM_EFFORT` | `high` | `low`/`medium`/`high`/`xhigh`/`max`. Lower it to cut token spend. |
+| `LLM_MODEL` | `claude-sonnet-5` | `claude-opus-5` if question quality needs it. |
+| `LLM_EFFORT` | `medium` | `low`/`medium`/`high`/`xhigh`/`max`. Thinking bills as output, so this is the main cost lever. |
 | `LLM_TIMEOUT_S` | `300` | Whole-request budget; generation runs for minutes. |
 | `LLM_MAX_RETRIES` | `2` | Retries on schema-validation failure. |
 | `LLM_BASE_URL` | — | Optional endpoint override (proxy/gateway). |
@@ -179,8 +179,8 @@ make tidy         # go mod tidy + verify
 | `GCP_SERVICE_ACCOUNT` | Service account email for Cloud Run |
 | `DATABASE_URL` | Neon PostgreSQL URL (`?sslmode=require`) |
 | `LLM_API_KEY` | Claude API key |
-| `LLM_MODEL` | `claude-opus-5` |
-| `LLM_EFFORT` | `high` |
+| `LLM_MODEL` | `claude-sonnet-5` |
+| `LLM_EFFORT` | `medium` |
 | `NOTIFY_WEBHOOK_URL` | Slack/Discord webhook for job alerts |
 | `API_KEY` | Strong random key for the mobile app |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins; supports `https://*.example.com` subdomain wildcards |

@@ -40,9 +40,17 @@ type ServerConfig struct {
 // exists to point tests or a proxy elsewhere. The timeout is generous because
 // generation streams with adaptive thinking and runs for minutes, not seconds.
 type LLMConfig struct {
-	APIKey      string `env:"LLM_API_KEY"`
-	Model       string `env:"LLM_MODEL"          envDefault:"claude-opus-5"`
-	Effort      string `env:"LLM_EFFORT"         envDefault:"high"`
+	APIKey string `env:"LLM_API_KEY"`
+
+	// Sonnet at medium effort is the cost/quality sweet spot for this workload:
+	// the prompt fully specifies subject, grade, type and topic, and the output
+	// is schema-validated, so the extra headroom of Opus buys little here.
+	// Thinking tokens bill as output, which makes effort the larger cost lever
+	// of the two. Raise to high, or switch to claude-opus-5, if distractor
+	// quality slips.
+	Model  string `env:"LLM_MODEL"  envDefault:"claude-sonnet-5"`
+	Effort string `env:"LLM_EFFORT" envDefault:"medium"`
+
 	BaseURL     string `env:"LLM_BASE_URL"`
 	TimeoutS    int    `env:"LLM_TIMEOUT_S"      envDefault:"300"`
 	MaxRetries  int    `env:"LLM_MAX_RETRIES"    envDefault:"2"`

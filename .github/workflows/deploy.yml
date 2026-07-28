@@ -143,8 +143,8 @@ jobs:
 # GCP_SERVICE_ACCOUNT          — service account email (deploy + Cloud Scheduler invoker)
 # DATABASE_URL                 — Neon PostgreSQL (postgres://...?sslmode=require)
 # LLM_API_KEY                  — Claude API key (console.anthropic.com)
-# LLM_MODEL                    — claude-opus-5 (or claude-sonnet-5 to cut cost)
-# LLM_EFFORT                   — low | medium | high | xhigh | max (default high)
+# LLM_MODEL                    — claude-sonnet-5 (or claude-opus-5 for more quality)
+# LLM_EFFORT                   — low | medium | high | xhigh | max (default medium)
 # NOTIFY_WEBHOOK_URL           — Slack/Discord webhook URL
 # API_KEY                      — strong random key for server-to-server and /admin/*
 #                                (app clients authenticate with Firebase ID tokens instead)
