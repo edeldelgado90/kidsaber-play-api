@@ -90,7 +90,7 @@ func CORSMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
 			origin := r.Header.Get("Origin")
 			if allowed.matches(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
 				w.Header().Set("Access-Control-Max-Age", corsMaxAge)
 			}

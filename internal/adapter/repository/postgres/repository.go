@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
 )
 
-// Repository implements both QuestionRepository and JobRunRepository using PostgreSQL.
+// Repository implements QuestionRepository, JobRunRepository and ReportRepository using PostgreSQL.
 // All queries use parameterized inputs — never string concatenation.
 type Repository struct {
 	pool *pgxpool.Pool
@@ -293,4 +294,69 @@ func marshalErrorDetails(details []domain.JobErrorDetail) ([]byte, error) {
 		return nil, fmt.Errorf("marshalling error_details: %w", err)
 	}
 	return b, nil
+}
+
+// ─── ReportRepository ──────────────────────────────────────────────────────────
+
+// FindQuestionSummary returns the classification and statement of a stored
+// question. Returns domain.ErrNotFound when the id is unknown, which is what
+// keeps reports about non-existent questions out of the table.
+func (r *Repository) FindQuestionSummary(ctx context.Context, questionID string) (domain.QuestionSummary, error) {
+	const q = `
+		SELECT subject, grade, type, COALESCE(payload->>'statement', '')
+		FROM question_bank
+		WHERE id = $1`
+
+	var (
+		subject   string
+		grade     int
+		qType     string
+		statement string
+	)
+
+	err := r.pool.QueryRow(ctx, q, questionID).Scan(&subject, &grade, &qType, &statement)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.QuestionSummary{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.QuestionSummary{}, fmt.Errorf("querying question summary: %w", err)
+	}
+
+	return domain.QuestionSummary{
+		ID:        questionID,
+		Subject:   domain.Subject(subject),
+		Grade:     grade,
+		Type:      domain.GameType(qType),
+		Statement: statement,
+	}, nil
+}
+
+// RecordReport inserts a report for the question or, when one already exists,
+// increments its counter and reopens it.
+//
+// The whole dedupe rests on question_id being the primary key: repeated reports
+// can only ever touch one row, so a flood costs one UPDATE and never grows the
+// table. `xmax = 0` is true only for a freshly inserted row, which is how the
+// caller learns whether this was the first report and therefore worth notifying.
+// A re-report of an already-reviewed question reopens it silently — it resurfaces
+// through the review query rather than through a second Discord ping.
+func (r *Repository) RecordReport(ctx context.Context, s domain.QuestionSummary) (domain.ReportOutcome, error) {
+	const q = `
+		INSERT INTO question_reports (question_id, subject, grade, type, statement)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (question_id) DO UPDATE
+			SET report_count     = question_reports.report_count + 1,
+			    last_reported_at = NOW(),
+			    status           = 'open'
+		RETURNING report_count, (xmax = 0) AS inserted`
+
+	var outcome domain.ReportOutcome
+	err := r.pool.QueryRow(ctx, q,
+		s.ID, string(s.Subject), s.Grade, string(s.Type), s.Statement,
+	).Scan(&outcome.Count, &outcome.Created)
+	if err != nil {
+		return domain.ReportOutcome{}, fmt.Errorf("recording question report: %w", err)
+	}
+
+	return outcome, nil
 }

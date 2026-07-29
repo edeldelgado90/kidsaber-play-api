@@ -17,3 +17,12 @@ type ErrorResponse struct {
 type JobRunsResponse struct {
 	Runs []domain.JobRun `json:"runs"`
 }
+
+// ReportQuestionResponse is the JSON response body for POST /questions/{id}/report.
+//
+// It deliberately carries no report count: telling an anonymous caller how many
+// people flagged a question hands them a progress meter for gaming the review
+// queue, and the player has no use for the number.
+type ReportQuestionResponse struct {
+	Status string `json:"status"`
+}

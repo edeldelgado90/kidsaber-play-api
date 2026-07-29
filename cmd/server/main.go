@@ -17,6 +17,7 @@ import (
 	"github.com/kidsaber/kidsaber-play-api/internal/adapter/repository/postgres"
 	"github.com/kidsaber/kidsaber-play-api/internal/config"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
+	"github.com/kidsaber/kidsaber-play-api/internal/usecase/reports"
 	"github.com/kidsaber/kidsaber-play-api/pkg/appcheck"
 	"github.com/kidsaber/kidsaber-play-api/pkg/idtoken"
 	"github.com/kidsaber/kidsaber-play-api/pkg/logger"
@@ -82,11 +83,23 @@ func run() error {
 	)
 	notifier := notify.NewMultiNotifier(log, webhookNotifier, smtpNotifier)
 
-	// ── Use Case ───────────────────────────────────────────────────────────────
+	// Player question reports go to their own Discord channel and never to email
+	// — they are content to review, not an incident to page anyone about. The
+	// notifier is built directly instead of through MultiNotifier so the SMTP
+	// channel cannot pick them up.
+	reviewWebhookURL := cfg.Notify.ReviewWebhookURL
+	if reviewWebhookURL == "" {
+		reviewWebhookURL = cfg.Notify.WebhookURL
+	}
+	reviewNotifier := notify.NewWebhookNotifier(reviewWebhookURL)
+
+	// ── Use Cases ──────────────────────────────────────────────────────────────
 	uc := questions.NewGetQuestionsUseCase(calcGen, llmGen, repo, notifier, log)
+	reportUC := reports.NewReportQuestionUseCase(repo, reviewNotifier, log)
 
 	// ── HTTP Handlers ──────────────────────────────────────────────────────────
 	questionsHandler := httpAdapter.NewQuestionsHandler(uc, log)
+	reportsHandler := httpAdapter.NewReportsHandler(reportUC, log)
 	adminHandler := httpAdapter.NewAdminHandler(repo, log)
 
 	// ── Firebase credentials ───────────────────────────────────────────────────
@@ -119,16 +132,18 @@ func run() error {
 	}
 
 	router := httpAdapter.NewRouter(httpAdapter.RouterConfig{
-		QuestionsHandler: questionsHandler,
-		AdminHandler:     adminHandler,
-		AppCheck:         appCheckValidator,
-		IDToken:          idTokenVerifier,
-		Logger:           log,
-		AuthEnabled:      cfg.Auth.Enabled,
-		APIKey:           cfg.Auth.APIKey,
-		AllowedOrigins:   cfg.CORS.AllowedOrigins,
-		RequestTimeout:   cfg.Server.Timeout,
-		RateLimitEnabled: true,
+		QuestionsHandler:       questionsHandler,
+		ReportsHandler:         reportsHandler,
+		AdminHandler:           adminHandler,
+		AppCheck:               appCheckValidator,
+		IDToken:                idTokenVerifier,
+		Logger:                 log,
+		AuthEnabled:            cfg.Auth.Enabled,
+		APIKey:                 cfg.Auth.APIKey,
+		AllowedOrigins:         cfg.CORS.AllowedOrigins,
+		RequestTimeout:         cfg.Server.Timeout,
+		RateLimitEnabled:       true,
+		ReportsRequireAppCheck: cfg.Auth.ReportsRequireAppCheck,
 	})
 
 	// ── HTTP Server ────────────────────────────────────────────────────────────

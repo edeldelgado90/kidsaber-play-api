@@ -75,6 +75,15 @@ type AuthConfig struct {
 	// X-Firebase-AppCheck header. When empty, only the static API key is
 	// accepted (useful for local development and CI).
 	FirebaseProjectID string `env:"FIREBASE_PROJECT_ID"`
+
+	// ReportsRequireAppCheck makes POST /questions/{id}/report reject the
+	// anonymous Firebase ID token, leaving App Check or the static API key.
+	//
+	// Defaults to false because App Check currently only works on web: the app's
+	// native builds attest via Play Integrity, which needs the react-native-firebase
+	// modules that are not wired yet. Turn this on once they are — until then it
+	// would make reporting fail on Android, the primary platform.
+	ReportsRequireAppCheck bool `env:"REPORTS_REQUIRE_APP_CHECK" envDefault:"false"`
 }
 
 // JobConfig holds question generator job settings.
@@ -90,7 +99,13 @@ type JobConfig struct {
 
 // NotifyConfig holds notification settings for webhook and SMTP.
 type NotifyConfig struct {
-	WebhookURL     string `env:"NOTIFY_WEBHOOK_URL"`
+	WebhookURL string `env:"NOTIFY_WEBHOOK_URL"`
+
+	// ReviewWebhookURL is a separate Discord webhook for player-submitted
+	// question reports, so content reports do not land in the same channel as
+	// infrastructure alerts. Falls back to WebhookURL when empty.
+	ReviewWebhookURL string `env:"NOTIFY_REVIEW_WEBHOOK_URL"`
+
 	SMTPHost       string `env:"NOTIFY_SMTP_HOST"`
 	SMTPPort       int    `env:"NOTIFY_SMTP_PORT"            envDefault:"587"`
 	SMTPUser       string `env:"NOTIFY_SMTP_USER"`
