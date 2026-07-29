@@ -7,8 +7,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/kidsaber/kidsaber-play-api/internal/domain"
 	"github.com/kidsaber/kidsaber-play-api/internal/usecase/questions"
+	"github.com/kidsaber/kidsaber-play-api/internal/usecase/reports"
 	"github.com/kidsaber/kidsaber-play-api/internal/version"
 )
 
@@ -97,6 +100,67 @@ func (h *QuestionsHandler) GetQuestions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, QuestionsResponse{Questions: qs})
+}
+
+// ReportsHandler handles POST /questions/{id}/report.
+type ReportsHandler struct {
+	useCase *reports.ReportQuestionUseCase
+	logger  *slog.Logger
+}
+
+// NewReportsHandler creates a ReportsHandler.
+func NewReportsHandler(uc *reports.ReportQuestionUseCase, logger *slog.Logger) *ReportsHandler {
+	return &ReportsHandler{useCase: uc, logger: logger}
+}
+
+// ReportQuestion handles POST /questions/{id}/report.
+//
+// The request body is ignored: a report is a bare "this one looks wrong" signal,
+// and the question's subject, grade and statement are read from the database.
+// That keeps player-supplied text out of both the reports table and Discord.
+func (h *ReportsHandler) ReportQuestion(w http.ResponseWriter, r *http.Request) {
+	questionID := chi.URLParam(r, "id")
+
+	// Reject malformed ids before they reach the database: a non-UUID would
+	// surface as a driver error and be reported as a 500, not the 400 it is.
+	if !isUUID(questionID) {
+		writeError(w, http.StatusBadRequest, "invalid_params", "id must be a question UUID")
+		return
+	}
+
+	if _, err := h.useCase.Execute(r.Context(), questionID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "No question with that id")
+			return
+		}
+		h.logger.Error("unexpected error in ReportQuestion", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error",
+			"An unexpected error occurred")
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, ReportQuestionResponse{Status: "received"})
+}
+
+// isUUID reports whether s is a canonical 8-4-4-4-12 hex UUID.
+// Written out rather than adding a UUID dependency for one format check.
+func isUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+		if !isHex {
+			return false
+		}
+	}
+	return true
 }
 
 // AdminHandler handles admin endpoints.

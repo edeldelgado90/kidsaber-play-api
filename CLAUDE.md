@@ -47,6 +47,7 @@ Senior Go engineer specialising in hexagonal architecture, REST APIs, PostgreSQL
 - **Non-root Docker user** — final image runs as `nonroot`.
 - **`quick_calculation` is always procedural** — never uses LLM, never reads from DB.
 - **`correctAnswers` is the canonical answer field** — always present in all question types.
+- **Question reports store only what the DB already knows** — `POST /questions/{id}/report` ignores its body; subject, grade and statement come from a `question_bank` lookup, never from the caller. No free text reaches the reports table or Discord.
 - **Zero secrets in source** — all via env vars; never log API keys, DATABASE_URL, or LLM responses.
 
 ## Code conventions
@@ -63,6 +64,7 @@ Senior Go engineer specialising in hexagonal architecture, REST APIs, PostgreSQL
 |------|---------|
 | `internal/domain/` | Question, JobRun entities; domain errors |
 | `internal/usecase/questions/` | GetQuestionsUseCase + ports |
+| `internal/usecase/reports/` | ReportQuestionUseCase + ports |
 | `internal/usecase/notify/` | NotificationService port |
 | `internal/adapter/http/` | Chi router, handlers, middleware, DTOs |
 | `internal/adapter/generator/llm/` | LLM client, prompts, parser, topic picker |

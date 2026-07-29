@@ -20,6 +20,7 @@ cmd/server → adapter/http → usecase → domain ← adapter/generator + adapt
 |--------|------|-------------|
 | `GET` | `/health` | Health check (no auth) |
 | `GET` | `/questions` | Get a question batch |
+| `POST` | `/questions/{id}/report` | Flag a question as wrong (players) |
 | `GET` | `/admin/jobs` | Job run history (API key required) |
 
 ### Authentication
@@ -40,6 +41,10 @@ token, so neither ID tokens nor App Check tokens reach the admin surface.
 
 Browser clients must have their origin listed in `CORS_ALLOWED_ORIGINS`, which
 supports `https://*.example.com` subdomain wildcards for preview deployments.
+
+`POST /questions/{id}/report` takes the same credentials as `/questions`, and
+`REPORTS_REQUIRE_APP_CHECK=true` narrows it to App Check or the static key. See
+[Question reports](#question-reports) for why that is off by default.
 
 ### GET /questions
 
@@ -77,6 +82,68 @@ GET /questions?subject=mathematics&grade=3&type=option_multiple&count=10
 ```
 
 **Error codes:** `400` invalid params · `429` LLM rate limit · `503` generation failed · `500` internal error
+
+### POST /questions/{id}/report
+
+Players flag a question that looks wrong. The request body is ignored — a report
+is a bare signal, and everything stored comes from looking the question up in
+`question_bank`, so a caller cannot inject its own text into the reports table
+or into Discord.
+
+```
+POST /questions/8a2f4c1e-0000-0000-0000-000000000000/report
+```
+
+**Response 202:**
+```json
+{ "status": "received" }
+```
+
+**Error codes:** `400` malformed id · `404` unknown question · `429` rate limited · `500` internal error
+
+The count of prior reports is deliberately not returned: it would tell an
+anonymous caller how close a question is to being pulled from review.
+
+## Question reports
+
+A report writes to `question_reports`, one row per question:
+
+```sql
+SELECT question_id, subject, grade, type, statement, report_count, last_reported_at
+FROM question_reports
+WHERE status = 'open'
+ORDER BY report_count DESC, last_reported_at DESC;
+```
+
+Look the question up in `question_bank` by that id, fix or delete it, then close
+the report:
+
+```sql
+UPDATE question_reports SET status = 'resolved' WHERE question_id = '<uuid>';
+-- or 'dismissed' when the question turned out to be fine
+```
+
+**Abuse resistance.** This is the one endpoint an anonymous client can write
+through, so it is fenced on four sides:
+
+| Control | Effect |
+|---------|--------|
+| `question_id` is the primary key | Repeat reports `UPDATE` one row instead of inserting. A flood cannot grow the table. |
+| Discord fires only on insert | Repeats bump the counter silently, so the channel cannot be spammed. |
+| Route rate limit (5/hour per IP) | Much tighter than the global 60/min. In-process, so on Cloud Run the ceiling multiplies by instance count — a speed bump, not a wall. |
+| `REPORTS_REQUIRE_APP_CHECK` | Drops the anonymous ID token, leaving App Check or the static key. |
+
+The dedupe is what actually bounds the damage; the rate limit only slows a
+single-source flood.
+
+`REPORTS_REQUIRE_APP_CHECK` ships **off**. An anonymous Firebase ID token proves
+nothing — anyone can mint one — so App Check is the only control that tells a
+real app instance from a `curl`. But the client only obtains an App Check token
+on web today; native builds would need Play Integrity via react-native-firebase,
+which is not wired up. Turn this on once it is.
+
+A re-report of a question already marked `resolved` or `dismissed` reopens it
+without a second Discord message — it resurfaces through the query above.
 
 ## Quick Start (local)
 

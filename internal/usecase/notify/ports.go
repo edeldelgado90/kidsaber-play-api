@@ -13,15 +13,37 @@ type FailureDetail struct {
 	Error   string `json:"error"`
 }
 
+// Event types carried by NotificationEvent.Type.
+const (
+	EventJobFailure     = "job_failure"
+	EventPoolLow        = "pool_low"
+	EventJobSuccess     = "job_success"
+	EventQuestionReport = "question_report"
+)
+
+// ReportDetail describes a question a player flagged as wrong.
+// Every field is read from the database, never from the request body.
+type ReportDetail struct {
+	QuestionID  string
+	Subject     string
+	Grade       int
+	Type        string
+	Statement   string
+	ReportCount int
+}
+
 // NotificationEvent carries the data for a notification alert.
 type NotificationEvent struct {
-	// Type is one of: "job_failure" | "pool_low" | "job_success"
+	// Type is one of the Event* constants above.
 	Type        string
 	JobRunID    string
 	Status      string
 	FailedCount int
 	Details     []FailureDetail
 	Timestamp   time.Time
+
+	// Report is set only for EventQuestionReport.
+	Report *ReportDetail
 }
 
 // NotificationService sends alerts on job events.

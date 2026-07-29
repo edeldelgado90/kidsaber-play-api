@@ -65,15 +65,19 @@ func (n *WebhookNotifier) Alert(ctx context.Context, event notify.NotificationEv
 
 // buildDiscordPayload creates a human-readable Discord message from a NotificationEvent.
 func buildDiscordPayload(event notify.NotificationEvent) discordPayload {
+	if event.Type == notify.EventQuestionReport && event.Report != nil {
+		return buildReportPayload(event.Report)
+	}
+
 	var emoji, title string
 	switch event.Type {
-	case "job_failure":
+	case notify.EventJobFailure:
 		emoji = "⚠️"
 		title = "KidSaber API Job **failure**"
-	case "pool_low":
+	case notify.EventPoolLow:
 		emoji = "🔶"
 		title = "KidSaber API **question pool is low**"
-	case "job_success":
+	case notify.EventJobSuccess:
 		emoji = "✅"
 		title = "KidSaber API Job **completed successfully**"
 	default:
@@ -102,4 +106,51 @@ func buildDiscordPayload(event notify.NotificationEvent) discordPayload {
 	}
 
 	return discordPayload{Content: content}
+}
+
+// maxStatementLen caps the statement copied into Discord. Statements are short
+// by construction, so this only guards against a pathological stored value.
+const maxStatementLen = 300
+
+// buildReportPayload renders a player report as a Discord message.
+//
+// The statement is machine-generated content from the question bank, but it
+// still reaches a channel that pings humans, so it is neutralised rather than
+// trusted: mentions are defused and the text is fenced so markdown inside it
+// cannot restyle the message or forge the rest of the alert.
+func buildReportPayload(r *notify.ReportDetail) discordPayload {
+	content := fmt.Sprintf(
+		"🚩 **Pregunta reportada** — %s / %d.º / %s\n```\n%s\n```\nID: `%s`",
+		sanitizeDiscord(r.Subject),
+		r.Grade,
+		sanitizeDiscord(r.Type),
+		sanitizeDiscord(truncate(r.Statement, maxStatementLen)),
+		sanitizeDiscord(r.QuestionID),
+	)
+
+	if r.ReportCount > 1 {
+		content += fmt.Sprintf(" · %d reportes", r.ReportCount)
+	}
+
+	return discordPayload{Content: content}
+}
+
+// sanitizeDiscord defuses text before it is embedded in a webhook message.
+//
+// A zero-width space after "@" stops @everyone, @here and role pings from
+// resolving while leaving the text readable, and stripping backticks prevents
+// the value from closing the code fence it is rendered inside.
+func sanitizeDiscord(s string) string {
+	s = strings.ReplaceAll(s, "`", "'")
+	s = strings.ReplaceAll(s, "@", "@​")
+	return s
+}
+
+// truncate shortens s to at most n runes, appending an ellipsis when it cuts.
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "…"
 }
